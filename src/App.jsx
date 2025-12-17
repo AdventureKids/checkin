@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { isDymoServiceRunning, getDymoPrinters, printCheckInLabels } from './dymoPrint';
 
 // Use relative URL in production (same origin), localhost in development
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
@@ -929,49 +930,88 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
         
         setEarnedRewards(allEarnedRewards);
 
-        // Print child labels
-        for (const child of pickupCodes) {
-          await fetch(`${API_BASE}/print`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              childName: child.name,
-              avatar: child.avatar,
-              pickupCode: child.pickupCode,
-              room: child.room || 'Room 101',
-              streak: (child.streak || 0) + 1,
-              rank: 1,
-              badges: child.badges || 0,
-              tier: (child.streak || 0) >= 11 ? 'gold' : (child.streak || 0) >= 7 ? 'silver' : (child.streak || 0) >= 3 ? 'bronze' : null,
-              isNewBadge: ((child.streak || 0) + 1) === 4 || ((child.streak || 0) + 1) === 8 || ((child.streak || 0) + 1) === 12,
-              badgeName: ((child.streak || 0) + 1) === 4 ? 'Bronze Champion' : ((child.streak || 0) + 1) === 8 ? 'Silver Star' : ((child.streak || 0) + 1) === 12 ? 'Gold Legend' : null
-            })
-          });
+        // Try Dymo browser printing first, fall back to server printing
+        let printedViaDymo = false;
+        
+        try {
+          const dymoStatus = await isDymoServiceRunning();
+          
+          if (dymoStatus.running) {
+            // Get available Dymo printers
+            const printers = await getDymoPrinters();
+            
+            if (printers.length > 0) {
+              const printerName = printers[0].name; // Use first available printer
+              console.log(`🖨️ Printing via Dymo to: ${printerName}`);
+              
+              // Print labels for each child via Dymo
+              for (const child of pickupCodes) {
+                await printCheckInLabels(printerName, {
+                  childName: child.name,
+                  pickupCode: child.pickupCode,
+                  room: child.room || 'Room 101',
+                  parentName: family.parent_name || family.parentName,
+                  parentPhone: family.phone,
+                  allergies: child.allergies,
+                  date: new Date().toLocaleDateString(),
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+              }
+              
+              printedViaDymo = true;
+              console.log('✅ Dymo printing complete');
+            }
+          }
+        } catch (dymoErr) {
+          console.log('Dymo printing not available, falling back to server:', dymoErr.message);
         }
         
-        // Print parent receipt
-        await fetch(`${API_BASE}/print-parent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            familyName: family.name,
-            children: pickupCodes.map(c => ({ name: c.name, pickupCode: c.pickupCode, room: c.room || 'Room 101' }))
-          })
-        });
-        
-        // Print reward certificates for each earned reward
-        for (const reward of allEarnedRewards) {
-          await fetch(`${API_BASE}/print-reward`, {
+        // Fall back to server-side printing if Dymo not available
+        if (!printedViaDymo) {
+          // Print child labels via server
+          for (const child of pickupCodes) {
+            await fetch(`${API_BASE}/print`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                childName: child.name,
+                avatar: child.avatar,
+                pickupCode: child.pickupCode,
+                room: child.room || 'Room 101',
+                streak: (child.streak || 0) + 1,
+                rank: 1,
+                badges: child.badges || 0,
+                tier: (child.streak || 0) >= 11 ? 'gold' : (child.streak || 0) >= 7 ? 'silver' : (child.streak || 0) >= 3 ? 'bronze' : null,
+                isNewBadge: ((child.streak || 0) + 1) === 4 || ((child.streak || 0) + 1) === 8 || ((child.streak || 0) + 1) === 12,
+                badgeName: ((child.streak || 0) + 1) === 4 ? 'Bronze Champion' : ((child.streak || 0) + 1) === 8 ? 'Silver Star' : ((child.streak || 0) + 1) === 12 ? 'Gold Legend' : null
+              })
+            });
+          }
+          
+          // Print parent receipt via server
+          await fetch(`${API_BASE}/print-parent`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              childName: reward.childName,
-              avatar: reward.childAvatar,
-              rewardName: reward.name,
-              rewardIcon: reward.icon,
-              prize: reward.prize
+              familyName: family.name,
+              children: pickupCodes.map(c => ({ name: c.name, pickupCode: c.pickupCode, room: c.room || 'Room 101' }))
             })
           });
+          
+          // Print reward certificates for each earned reward via server
+          for (const reward of allEarnedRewards) {
+            await fetch(`${API_BASE}/print-reward`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                childName: reward.childName,
+                avatar: reward.childAvatar,
+                rewardName: reward.name,
+                rewardIcon: reward.icon,
+                prize: reward.prize
+              })
+            });
+          }
         }
         
         setPrintStatus('success');
