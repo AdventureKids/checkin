@@ -934,11 +934,15 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
         let printedViaDymo = false;
         
         try {
+          console.log('🔍 Checking for Dymo Connect service...');
           const dymoStatus = await isDymoServiceRunning();
+          console.log('📡 Dymo status:', dymoStatus);
           
           if (dymoStatus.running) {
             // Get available Dymo printers
+            console.log('🖨️ Getting available printers...');
             const printers = await getDymoPrinters();
+            console.log('🖨️ Found printers:', printers);
             
             if (printers.length > 0) {
               const printerName = printers[0].name; // Use first available printer
@@ -946,6 +950,7 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
               
               // Print labels for each child via Dymo
               for (const child of pickupCodes) {
+                console.log(`📄 Printing label for: ${child.name}`);
                 await printCheckInLabels(printerName, {
                   childName: child.name,
                   pickupCode: child.pickupCode,
@@ -960,10 +965,15 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
               
               printedViaDymo = true;
               console.log('✅ Dymo printing complete');
+            } else {
+              console.log('⚠️ No Dymo printers found');
             }
+          } else {
+            console.log('⚠️ Dymo Connect service not running');
           }
         } catch (dymoErr) {
-          console.log('Dymo printing not available, falling back to server:', dymoErr.message);
+          console.log('❌ Dymo printing error:', dymoErr.message);
+          console.log('Falling back to server printing...');
         }
         
         // Fall back to server-side printing if Dymo not available
