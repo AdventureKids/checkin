@@ -44,7 +44,18 @@ async function fetchAvatarImage(avatarId) {
 }
 
 const app = express();
-app.use(cors());
+
+// CORS configuration - allow all origins for flexibility
+app.use(cors({
+  origin: true, // Reflects the request origin - works with credentials
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
+
 app.use(express.json());
 
 // ============================================
