@@ -23,6 +23,9 @@ temp-*.html
 temp-*.txt
 *.tar.gz
 
+# Electron build output
+release/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
