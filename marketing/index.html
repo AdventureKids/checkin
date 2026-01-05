@@ -1,0 +1,2004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChurchCheck - Kids Check-In That Makes Them Want to Come Back</title>
+  <meta name="description" content="The only church check-in system with built-in attendance incentives. Secure, fast, and designed to boost kids ministry engagement through streaks, badges, and rewards.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --primary: #4F46E5;
+      --primary-dark: #3730A3;
+      --primary-light: #818CF8;
+      --accent: #F59E0B;
+      --accent-light: #FCD34D;
+      --success: #10B981;
+      --dark: #0F172A;
+      --dark-lighter: #1E293B;
+      --gray: #64748B;
+      --light: #F8FAFC;
+      --white: #FFFFFF;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--dark);
+      color: var(--white);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 1rem 2rem;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--white);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #8B5CF6, #A855F7, #F59E0B);
+      clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    
+    .logo-icon::after {
+      content: '⚡';
+      position: absolute;
+      font-size: 1.1rem;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -35%);
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+    
+    .nav-links a {
+      color: var(--gray);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.3s;
+    }
+    
+    .nav-links a:hover {
+      color: var(--white);
+    }
+    
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      border: none;
+      font-size: 1rem;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: var(--white);
+      box-shadow: 0 4px 20px rgba(79, 70, 229, 0.4);
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(79, 70, 229, 0.5);
+    }
+    
+    .btn-accent {
+      background: linear-gradient(135deg, var(--accent), #D97706);
+      color: var(--dark);
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
+    }
+    
+    .btn-accent:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(245, 158, 11, 0.5);
+    }
+    
+    .btn-outline {
+      background: transparent;
+      color: var(--white);
+      border: 2px solid rgba(255,255,255,0.3);
+    }
+    
+    .btn-outline:hover {
+      border-color: var(--white);
+      background: rgba(255,255,255,0.1);
+    }
+    
+    .btn-large {
+      padding: 1rem 2rem;
+      font-size: 1.1rem;
+    }
+    
+    /* Hero Section */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 8rem 2rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: 
+        radial-gradient(circle at 20% 80%, rgba(79, 70, 229, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(245, 158, 11, 0.2) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    
+    .hero-content {
+      max-width: 900px;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      padding: 0.5rem 1rem;
+      border-radius: 50px;
+      font-size: 0.9rem;
+      color: var(--accent-light);
+      margin-bottom: 2rem;
+    }
+    
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+    }
+    
+    .hero h1 .highlight {
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--gray);
+      max-width: 700px;
+      margin: 0 auto 2.5rem;
+    }
+    
+    .hero-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 4rem;
+      margin-top: 4rem;
+      padding-top: 3rem;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .hero-stat {
+      text-align: center;
+    }
+    
+    .hero-stat-value {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    
+    .hero-stat-label {
+      color: var(--gray);
+      font-size: 0.9rem;
+    }
+    
+    /* Gamification Section */
+    .gamification {
+      padding: 6rem 2rem;
+      background: linear-gradient(180deg, var(--dark) 0%, var(--dark-lighter) 100%);
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    .section-header {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+    
+    .section-label {
+      display: inline-block;
+      background: rgba(79, 70, 229, 0.2);
+      color: var(--primary-light);
+      padding: 0.5rem 1rem;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .section-title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      margin-bottom: 1rem;
+    }
+    
+    .section-subtitle {
+      color: var(--gray);
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    
+    .gamification-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+    }
+    
+    .game-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 2rem;
+      transition: all 0.3s;
+    }
+    
+    .game-card:hover {
+      transform: translateY(-5px);
+      border-color: var(--accent);
+      box-shadow: 0 20px 40px rgba(245, 158, 11, 0.1);
+    }
+    
+    .game-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, var(--accent), #D97706);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .game-card h3 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    
+    .game-card p {
+      color: var(--gray);
+      line-height: 1.7;
+    }
+    
+    /* Security Section */
+    .security {
+      padding: 6rem 2rem;
+      background: var(--dark);
+    }
+    
+    .security-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    
+    @media (max-width: 768px) {
+      .security-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .security-content h2 {
+      font-size: clamp(2rem, 4vw, 2.5rem);
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+    }
+    
+    .security-content p {
+      color: var(--gray);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .security-features {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .security-feature {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: rgba(16, 185, 129, 0.1);
+      border-radius: 12px;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    
+    .security-feature-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--success);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    
+    .security-visual {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(79, 70, 229, 0.2));
+      border-radius: 24px;
+      padding: 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 400px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .security-visual-content {
+      text-align: center;
+    }
+    
+    .lock-icon {
+      font-size: 6rem;
+      margin-bottom: 1rem;
+    }
+    
+    .pickup-code {
+      font-size: 3rem;
+      font-weight: 800;
+      font-family: monospace;
+      background: var(--dark);
+      padding: 1rem 2rem;
+      border-radius: 12px;
+      letter-spacing: 0.2em;
+    }
+    
+    /* Features Section */
+    .features {
+      padding: 6rem 2rem;
+      background: linear-gradient(180deg, var(--dark-lighter) 0%, var(--dark) 100%);
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .feature-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: all 0.3s;
+    }
+    
+    .feature-card:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.15);
+    }
+    
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+    
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    
+    .feature-card p {
+      color: var(--gray);
+      font-size: 0.95rem;
+    }
+    
+    /* Pricing Section */
+    .pricing {
+      padding: 6rem 2rem;
+      background: var(--dark);
+    }
+    
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    
+    .pricing-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      padding: 2.5rem;
+      position: relative;
+      transition: all 0.3s;
+    }
+    
+    .pricing-card.featured {
+      background: linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(245, 158, 11, 0.1));
+      border-color: var(--primary);
+      transform: scale(1.05);
+    }
+    
+    .pricing-card.featured::before {
+      content: 'MOST POPULAR';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--accent), #D97706);
+      color: var(--dark);
+      padding: 0.4rem 1rem;
+      border-radius: 50px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    
+    .pricing-name {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    
+    .pricing-price {
+      margin-bottom: 1.5rem;
+    }
+    
+    .pricing-amount {
+      font-size: 3.5rem;
+      font-weight: 800;
+    }
+    
+    .pricing-period {
+      color: var(--gray);
+    }
+    
+    .pricing-description {
+      color: var(--gray);
+      margin-bottom: 2rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 2rem;
+    }
+    
+    .pricing-features li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      color: rgba(255,255,255,0.9);
+    }
+    
+    .pricing-features li::before {
+      content: '✓';
+      color: var(--success);
+      font-weight: 700;
+    }
+    
+    .pricing-card .btn {
+      width: 100%;
+      justify-content: center;
+    }
+    
+    /* Trial Section */
+    .trial {
+      padding: 6rem 2rem;
+      background: linear-gradient(135deg, var(--primary-dark), var(--dark));
+      text-align: center;
+    }
+    
+    .trial-content {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    
+    .trial h2 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      margin-bottom: 1rem;
+    }
+    
+    .trial p {
+      color: rgba(255,255,255,0.8);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .trial-form {
+      display: flex;
+      gap: 1rem;
+      max-width: 500px;
+      margin: 0 auto;
+      flex-wrap: wrap;
+    }
+    
+    .trial-form input {
+      flex: 1;
+      min-width: 200px;
+      padding: 1rem 1.5rem;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.1);
+      color: var(--white);
+      font-size: 1rem;
+    }
+    
+    .trial-form input::placeholder {
+      color: rgba(255,255,255,0.5);
+    }
+    
+    .trial-form input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    .trial-note {
+      margin-top: 1rem;
+      color: rgba(255,255,255,0.6);
+      font-size: 0.9rem;
+    }
+    
+    /* FAQ Section */
+    .faq {
+      padding: 6rem 2rem;
+      background: var(--dark);
+    }
+    
+    .faq-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 1.5rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    
+    @media (max-width: 500px) {
+      .faq-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .faq-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+    
+    .faq-question {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--white);
+    }
+    
+    .faq-answer {
+      color: var(--gray);
+      line-height: 1.7;
+    }
+    
+    /* Footer */
+    footer {
+      padding: 4rem 2rem;
+      background: var(--dark-lighter);
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 3rem;
+    }
+    
+    @media (max-width: 768px) {
+      .footer-content {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .footer-content {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .footer-brand p {
+      color: var(--gray);
+      margin-top: 1rem;
+      max-width: 300px;
+    }
+    
+    .footer-column h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--white);
+    }
+    
+    .footer-column a {
+      display: block;
+      color: var(--gray);
+      text-decoration: none;
+      margin-bottom: 0.5rem;
+      transition: color 0.3s;
+    }
+    
+    .footer-column a:hover {
+      color: var(--white);
+    }
+    
+    .footer-bottom {
+      max-width: 1200px;
+      margin: 3rem auto 0;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--gray);
+      font-size: 0.9rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    /* Animations */
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    
+    .float {
+      animation: float 3s ease-in-out infinite;
+    }
+    
+    /* Hero Content Row - Bullets + Avatar side by side */
+    .hero-content-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3rem;
+      margin-bottom: 2.5rem;
+    }
+    
+    @media (max-width: 768px) {
+      .hero-content-row {
+        flex-direction: column;
+        gap: 2rem;
+      }
+    }
+    
+    /* Hero Avatar Animation */
+    .hero-avatar {
+      width: 280px;
+      height: 280px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    
+    .hero-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      position: absolute;
+      top: 0;
+      left: 0;
+      opacity: 0;
+    }
+    
+    .hero-avatar img.active {
+      opacity: 1;
+    }
+    
+    /* Hero Bullet Points */
+    .hero-bullets {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      text-align: left;
+    }
+    
+    .hero-bullet {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--gray);
+      font-size: 1.15rem;
+    }
+    
+    .hero-bullet-icon {
+      color: var(--accent);
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    
+    /* Mobile Menu */
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+      
+      .hero-stats {
+        gap: 2rem;
+        flex-wrap: wrap;
+      }
+    }
+    
+    /* Demo Modal */
+    .demo-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    
+    .demo-overlay.active {
+      display: flex;
+    }
+    
+    .demo-container {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      border-radius: 24px;
+      max-width: 900px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      position: relative;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .demo-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 1.5rem;
+      cursor: pointer;
+      z-index: 10;
+    }
+    
+    .demo-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    
+    /* Demo Screens */
+    .demo-screen {
+      display: none;
+      padding: 3rem;
+      text-align: center;
+      min-height: 500px;
+    }
+    
+    .demo-screen.active {
+      display: block;
+    }
+    
+    .demo-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+    
+    .demo-subtitle {
+      color: var(--gray);
+      margin-bottom: 2rem;
+    }
+    
+    /* Phone Input Screen */
+    .demo-phone-input {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin: 2rem 0;
+    }
+    
+    .demo-phone-input input {
+      width: 60px;
+      height: 70px;
+      font-size: 2rem;
+      text-align: center;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      color: white;
+      font-weight: 700;
+    }
+    
+    .demo-phone-input input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    .demo-keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 80px);
+      gap: 0.75rem;
+      justify-content: center;
+      margin: 2rem 0;
+    }
+    
+    .demo-key {
+      width: 80px;
+      height: 60px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.1);
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .demo-key:hover {
+      background: rgba(255,255,255,0.2);
+      transform: scale(1.05);
+    }
+    
+    .demo-key.accent {
+      background: linear-gradient(135deg, var(--accent), #D97706);
+      color: var(--dark);
+    }
+    
+    /* Family Selection Screen */
+    .demo-family-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    
+    .demo-child-card {
+      background: rgba(255,255,255,0.05);
+      border: 2px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 1.5rem;
+      width: 200px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .demo-child-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-5px);
+    }
+    
+    .demo-child-card.selected {
+      border-color: var(--success);
+      background: rgba(16, 185, 129, 0.1);
+    }
+    
+    .demo-child-avatar {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 1rem;
+      position: relative;
+    }
+    
+    .demo-child-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    
+    .demo-child-name {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    
+    .demo-child-age {
+      color: var(--gray);
+      font-size: 0.9rem;
+    }
+    
+    .demo-child-stats {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+    }
+    
+    .demo-child-stats span {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    
+    /* Celebration Screen */
+    .demo-celebration {
+      position: relative;
+    }
+    
+    .demo-confetti {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    
+    .confetti-piece {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      animation: confetti-fall 3s ease-out forwards;
+    }
+    
+    @keyframes confetti-fall {
+      0% {
+        transform: translateY(-100px) rotate(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(500px) rotate(720deg);
+        opacity: 0;
+      }
+    }
+    
+    .demo-celebration-avatar {
+      width: 180px;
+      height: 180px;
+      margin: 0 auto 1.5rem;
+      position: relative;
+    }
+    
+    .demo-celebration-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    
+    .demo-celebration-name {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+    }
+    
+    .demo-celebration-room {
+      font-size: 1.3rem;
+      color: var(--accent);
+      margin-bottom: 1.5rem;
+    }
+    
+    .demo-badges {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin: 1.5rem 0;
+    }
+    
+    .demo-badge {
+      text-align: center;
+    }
+    
+    .demo-badge-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.25rem;
+    }
+    
+    .demo-badge-label {
+      font-size: 0.85rem;
+      color: var(--gray);
+    }
+    
+    .demo-badge-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    
+    /* Label Preview Screen */
+    .demo-labels {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+      margin: 2rem 0;
+    }
+    
+    .demo-label {
+      background: white;
+      color: #1a1a1a;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: left;
+      width: 280px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    
+    .demo-label-title {
+      font-size: 0.75rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .demo-label-row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+    
+    .demo-label-avatar {
+      width: 60px;
+      height: 60px;
+      flex-shrink: 0;
+    }
+    
+    .demo-label-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    
+    .demo-label-info h4 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    
+    .demo-label-info p {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 0.15rem;
+    }
+    
+    .demo-label-code {
+      font-family: monospace;
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: #f0f0f0;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      text-align: center;
+      margin-top: 0.75rem;
+      letter-spacing: 0.1em;
+    }
+    
+    .demo-label-badges {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    
+    .demo-label-badges span {
+      font-size: 1.2rem;
+    }
+    
+    .demo-nav {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Demo Modal -->
+  <div class="demo-overlay" id="demoOverlay">
+    <div class="demo-container">
+      <button class="demo-close" onclick="closeDemo()">×</button>
+      
+      <!-- Screen 1: Phone Entry -->
+      <div class="demo-screen active" id="demoScreen1">
+        <div class="demo-title">Welcome! Enter Your Phone Number</div>
+        <div class="demo-subtitle">Try any 10-digit number to see the check-in flow</div>
+        
+        <div class="demo-phone-input">
+          <input type="text" maxlength="1" id="phone1" readonly>
+          <input type="text" maxlength="1" id="phone2" readonly>
+          <input type="text" maxlength="1" id="phone3" readonly>
+          <span style="font-size: 2rem; color: var(--gray);">-</span>
+          <input type="text" maxlength="1" id="phone4" readonly>
+          <input type="text" maxlength="1" id="phone5" readonly>
+          <input type="text" maxlength="1" id="phone6" readonly>
+          <span style="font-size: 2rem; color: var(--gray);">-</span>
+          <input type="text" maxlength="1" id="phone7" readonly>
+          <input type="text" maxlength="1" id="phone8" readonly>
+          <input type="text" maxlength="1" id="phone9" readonly>
+          <input type="text" maxlength="1" id="phone10" readonly>
+        </div>
+        
+        <div class="demo-keypad">
+          <button class="demo-key" onclick="addDigit('1')">1</button>
+          <button class="demo-key" onclick="addDigit('2')">2</button>
+          <button class="demo-key" onclick="addDigit('3')">3</button>
+          <button class="demo-key" onclick="addDigit('4')">4</button>
+          <button class="demo-key" onclick="addDigit('5')">5</button>
+          <button class="demo-key" onclick="addDigit('6')">6</button>
+          <button class="demo-key" onclick="addDigit('7')">7</button>
+          <button class="demo-key" onclick="addDigit('8')">8</button>
+          <button class="demo-key" onclick="addDigit('9')">9</button>
+          <button class="demo-key" onclick="clearPhone()">C</button>
+          <button class="demo-key" onclick="addDigit('0')">0</button>
+          <button class="demo-key accent" onclick="submitPhone()">→</button>
+        </div>
+      </div>
+      
+      <!-- Screen 2: Family Selection -->
+      <div class="demo-screen" id="demoScreen2">
+        <div class="demo-title">Welcome, Johnson Family! 👋</div>
+        <div class="demo-subtitle">Select who's checking in today</div>
+        
+        <div class="demo-family-grid">
+          <div class="demo-child-card" onclick="toggleChild(this, 'Emma')">
+            <div class="demo-child-avatar">
+              <img src="avatars/boy-ranger/boy-test-000.png" alt="Emma">
+            </div>
+            <div class="demo-child-name">Emma</div>
+            <div class="demo-child-age">Age 7</div>
+            <div class="demo-child-stats">
+              <span>🔥 12</span>
+              <span>🥇🥈🥉</span>
+            </div>
+          </div>
+          
+          <div class="demo-child-card" onclick="toggleChild(this, 'Liam')">
+            <div class="demo-child-avatar">
+              <img src="avatars/boy-ranger/boy-test-000.png" alt="Liam">
+            </div>
+            <div class="demo-child-name">Liam</div>
+            <div class="demo-child-age">Age 5</div>
+            <div class="demo-child-stats">
+              <span>🔥 8</span>
+              <span>🥇🥈</span>
+            </div>
+          </div>
+          
+          <div class="demo-child-card" onclick="toggleChild(this, 'Noah')">
+            <div class="demo-child-avatar">
+              <img src="avatars/boy-ranger/boy-test-000.png" alt="Noah">
+            </div>
+            <div class="demo-child-name">Noah</div>
+            <div class="demo-child-age">Age 3</div>
+            <div class="demo-child-stats">
+              <span>🔥 4</span>
+              <span>🥉</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="demo-nav">
+          <button class="btn btn-outline" onclick="goToScreen(1)">← Back</button>
+          <button class="btn btn-accent" onclick="checkIn()">Check In Selected →</button>
+        </div>
+      </div>
+      
+      <!-- Screen 3: Celebration -->
+      <div class="demo-screen demo-celebration" id="demoScreen3">
+        <div class="demo-confetti" id="confettiContainer"></div>
+        
+        <div class="demo-title">🎉 You're Checked In!</div>
+        
+        <div class="demo-celebration-avatar">
+          <img src="avatars/boy-ranger/boy-test-000.png" alt="Avatar">
+        </div>
+        
+        <div class="demo-celebration-name" id="celebrationName">Emma Johnson</div>
+        <div class="demo-celebration-room">Room: Adventure Zone (K-2nd)</div>
+        
+        <div class="demo-badges">
+          <div class="demo-badge">
+            <div class="demo-badge-icon">🔥</div>
+            <div class="demo-badge-label">Streak</div>
+            <div class="demo-badge-value">12 Weeks!</div>
+          </div>
+          <div class="demo-badge">
+            <div class="demo-badge-icon">⭐</div>
+            <div class="demo-badge-label">Rank</div>
+            <div class="demo-badge-value">Explorer</div>
+          </div>
+          <div class="demo-badge">
+            <div class="demo-badge-icon">🏆</div>
+            <div class="demo-badge-label">Badges</div>
+            <div class="demo-badge-value">🥇🥈🥉</div>
+          </div>
+        </div>
+        
+        <div class="demo-nav">
+          <button class="btn btn-accent" onclick="showLabels()">See Your Labels →</button>
+        </div>
+      </div>
+      
+      <!-- Screen 4: Label Preview -->
+      <div class="demo-screen" id="demoScreen4">
+        <div class="demo-title">📋 Your Printed Labels</div>
+        <div class="demo-subtitle">These print automatically on your Dymo printer</div>
+        
+        <div class="demo-labels">
+          <div class="demo-label">
+            <div class="demo-label-title">👶 Child Name Tag</div>
+            <div class="demo-label-row">
+              <div class="demo-label-avatar">
+                <img src="avatars/boy-ranger/boy-test-000.png" alt="Avatar">
+              </div>
+              <div class="demo-label-info">
+                <h4>Emma Johnson</h4>
+                <p>Adventure Zone (K-2nd)</p>
+                <p>🔥 12 Week Streak!</p>
+                <div class="demo-label-badges">
+                  <span>🥇</span><span>🥈</span><span>🥉</span>
+                </div>
+              </div>
+            </div>
+            <div class="demo-label-code">AB7X</div>
+          </div>
+          
+          <div class="demo-label">
+            <div class="demo-label-title">👨‍👩‍👧 Parent Receipt</div>
+            <div class="demo-label-info" style="width: 100%;">
+              <h4>Johnson Family</h4>
+              <p style="margin-top: 0.5rem;"><strong>Emma</strong> → Adventure Zone</p>
+              <p><strong>Liam</strong> → Discovery Land</p>
+              <p><strong>Noah</strong> → Little Explorers</p>
+              <p style="margin-top: 0.75rem; font-size: 0.8rem; color: #999;">
+                Pickup Code Required
+              </p>
+            </div>
+            <div class="demo-label-code">AB7X</div>
+          </div>
+        </div>
+        
+        <div class="demo-nav">
+          <button class="btn btn-outline" onclick="goToScreen(3)">← Back</button>
+          <button class="btn btn-accent" onclick="closeDemo()">Close Demo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-container">
+      <a href="#" class="logo">
+        <div class="logo-icon"></div>
+        ChurchCheck
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="admin.html">Admin Login</a>
+        <a href="#trial" class="btn btn-primary">Start Free Trial</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="hero-content">
+      <div class="hero-badge">
+        🌟 Check-In With Built-In Attendance Incentives
+      </div>
+      <h1>
+        Kids Check-In That Makes Them <span class="highlight">Want to Come Back</span>
+      </h1>
+      <div class="hero-content-row">
+        <div class="hero-bullets">
+          <div class="hero-bullet">
+            <span class="hero-bullet-icon">✓</span>
+            <span>Secure pickup codes & allergy tracking</span>
+          </div>
+          <div class="hero-bullet">
+            <span class="hero-bullet-icon">✓</span>
+            <span>Attendance streaks that kids love</span>
+          </div>
+          <div class="hero-bullet">
+            <span class="hero-bullet-icon">✓</span>
+            <span>Collectible badges & rewards</span>
+          </div>
+          <div class="hero-bullet">
+            <span class="hero-bullet-icon">✓</span>
+            <span>Instant Dymo label printing</span>
+          </div>
+        </div>
+        <div class="hero-avatar" id="heroAvatar">
+          <!-- PNG sequence will be loaded here by JavaScript -->
+        </div>
+      </div>
+      <div class="hero-buttons">
+        <a href="#trial" class="btn btn-accent btn-large">
+          Start 30-Day Free Trial →
+        </a>
+        <a href="#" class="btn btn-outline btn-large" onclick="openDemo(); return false;">
+          Try Demo →
+        </a>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="hero-stat-value">47%</div>
+          <div class="hero-stat-label">Increase in Attendance</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value">&lt;30s</div>
+          <div class="hero-stat-label">Average Check-In Time</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value">100%</div>
+          <div class="hero-stat-label">Secure Pickup Tracking</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Incentives Section -->
+  <section class="gamification">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-label">🔥 Incentivized Attendance</div>
+        <h2 class="section-title">Encourage Consistent Participation</h2>
+        <p class="section-subtitle">
+          Kids don't just check in — they build momentum. Our incentive system 
+          creates excitement that brings families back week after week.
+        </p>
+      </div>
+      
+      <div class="gamification-grid">
+        <div class="game-card">
+          <div class="game-icon">🔥</div>
+          <h3>Attendance Streaks</h3>
+          <p>
+            Kids build weekly streaks that they're proud of. Watch them remind 
+            their parents it's time for church — because they don't want to 
+            lose their streak!
+          </p>
+        </div>
+        
+        <div class="game-card">
+          <div class="game-icon">🏅</div>
+          <h3>Collectible Badges</h3>
+          <p>
+            Bronze, Silver, and Gold milestone badges celebrate commitment. 
+            Kids earn special recognition as they grow in their faith journey.
+          </p>
+        </div>
+        
+        <div class="game-card">
+          <div class="game-icon">🎁</div>
+          <h3>Reward System</h3>
+          <p>
+            Customize prizes and incentives for your ministry. Whether it's 
+            stickers, treats, or special experiences — you control the rewards.
+          </p>
+        </div>
+        
+        <div class="game-card">
+          <div class="game-icon">📊</div>
+          <h3>Progress Tracking</h3>
+          <p>
+            Kids see their growth over time. Celebrate consistency and 
+            commitment as they build their faith journey week by week.
+          </p>
+        </div>
+        
+        <div class="game-card">
+          <div class="game-icon">🎨</div>
+          <h3>Custom Avatars</h3>
+          <p>
+            Every child gets their own adventure character that appears on 
+            their name tag. It's their special identity in your ministry.
+          </p>
+        </div>
+        
+        <div class="game-card">
+          <div class="game-icon">🎉</div>
+          <h3>Celebration Moments</h3>
+          <p>
+            Check-in becomes a celebration with animations, confetti, and 
+            milestone announcements. Every arrival feels special.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Security Section -->
+  <section class="security">
+    <div class="container">
+      <div class="security-grid">
+        <div class="security-content">
+          <div class="section-label">🔒 Uncompromising Security</div>
+          <h2>Fun Doesn't Mean Compromising Safety</h2>
+          <p>
+            Every feature in ChurchCheck was built with child safety as the 
+            foundation. Parents trust you with their most precious gift — 
+            we help you honor that trust.
+          </p>
+          
+          <div class="security-features">
+            <div class="security-feature">
+              <div class="security-feature-icon">🔑</div>
+              <div>
+                <strong>Unique Pickup Codes</strong><br>
+                <span style="color: var(--gray);">4-character codes printed on parent receipts. No code, no pickup.</span>
+              </div>
+            </div>
+            
+            <div class="security-feature">
+              <div class="security-feature-icon">⚠️</div>
+              <div>
+                <strong>Allergy Alerts</strong><br>
+                <span style="color: var(--gray);">Critical allergy information printed directly on name tags.</span>
+              </div>
+            </div>
+            
+            <div class="security-feature">
+              <div class="security-feature-icon">👨‍👩‍👧</div>
+              <div>
+                <strong>Authorized Pickup List</strong><br>
+                <span style="color: var(--gray);">Parents control exactly who can pick up their children.</span>
+              </div>
+            </div>
+            
+            <div class="security-feature">
+              <div class="security-feature-icon">📱</div>
+              <div>
+                <strong>Real-Time Tracking</strong><br>
+                <span style="color: var(--gray);">Know exactly who's in the building at all times.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="security-visual">
+          <div class="security-visual-content">
+            <div class="lock-icon float">🔐</div>
+            <div class="pickup-code">AB7X</div>
+            <p style="margin-top: 1rem; color: var(--gray);">Secure pickup code</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-label">⚡ Powerful Features</div>
+        <h2 class="section-title">Everything Your Ministry Needs</h2>
+        <p class="section-subtitle">
+          From lightning-fast check-in to detailed reports, ChurchCheck 
+          handles it all so you can focus on ministry.
+        </p>
+      </div>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🖨️</div>
+          <h3>Instant Label Printing</h3>
+          <p>Dymo-compatible labels print in seconds with names, pickup codes, and allergy info.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">📱</div>
+          <h3>Phone or PIN Check-In</h3>
+          <p>Families choose their preferred method — quick phone lookup or personalized PIN codes.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">🏷️</div>
+          <h3>Custom Label Designer</h3>
+          <p>Design your own labels with our visual editor. Show exactly what you need.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">👥</div>
+          <h3>Volunteer Management</h3>
+          <p>Track volunteer check-ins, print badges, and manage your serving teams.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Attendance Reports</h3>
+          <p>Powerful analytics show trends, growth, and engagement over time.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">🚪</div>
+          <h3>Room Management</h3>
+          <p>Assign kids to age-appropriate rooms with capacity tracking.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">📅</div>
+          <h3>Event Templates</h3>
+          <p>Different settings for Sunday morning, midweek, VBS — switch with one click.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">✅</div>
+          <h3>Secure Checkout</h3>
+          <p>Match pickup codes to ensure children leave with authorized adults.</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">📥</div>
+          <h3>Easy Data Import</h3>
+          <p>Import your existing family database from spreadsheets or other systems.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-label">💰 Simple Pricing</div>
+        <h2 class="section-title">Plans That Grow With Your Ministry</h2>
+        <p class="section-subtitle">
+          Start free, upgrade when you're ready. No contracts, cancel anytime.
+        </p>
+      </div>
+      
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="pricing-name">Starter</div>
+          <div class="pricing-price">
+            <span class="pricing-amount">Free</span>
+            <span class="pricing-period">forever</span>
+          </div>
+          <p class="pricing-description">
+            Perfect for small churches just getting started with digital check-in.
+          </p>
+          <ul class="pricing-features">
+            <li>1 check-in kiosk</li>
+            <li>Up to 50 families</li>
+            <li>Basic name tags</li>
+            <li>Pickup code security</li>
+            <li>Email support</li>
+          </ul>
+          <a href="#trial" class="btn btn-outline">Get Started Free</a>
+        </div>
+        
+        <div class="pricing-card featured">
+          <div class="pricing-name">Ministry</div>
+          <div class="pricing-price">
+            <span class="pricing-amount">$29</span>
+            <span class="pricing-period">/month</span>
+          </div>
+          <p class="pricing-description">
+            Full incentive features and customization for growing ministries.
+          </p>
+          <ul class="pricing-features">
+            <li>3 check-in kiosks</li>
+            <li>Unlimited families</li>
+            <li>Streaks, badges & rewards</li>
+            <li>Custom label designer</li>
+            <li>Volunteer management</li>
+            <li>Attendance reports</li>
+            <li>Priority support</li>
+          </ul>
+          <a href="#trial" class="btn btn-accent">Start Free Trial</a>
+        </div>
+        
+        <div class="pricing-card">
+          <div class="pricing-name">Campus</div>
+          <div class="pricing-price">
+            <span class="pricing-amount">$79</span>
+            <span class="pricing-period">/month</span>
+          </div>
+          <p class="pricing-description">
+            For large churches and multi-site campuses.
+          </p>
+          <ul class="pricing-features">
+            <li>Unlimited kiosks</li>
+            <li>Multi-campus support</li>
+            <li>Advanced analytics</li>
+            <li>API access</li>
+            <li>Custom integrations</li>
+            <li>Dedicated account manager</li>
+            <li>Phone support</li>
+          </ul>
+          <a href="#trial" class="btn btn-outline">Contact Sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Trial Section -->
+  <section class="trial" id="trial">
+    <div class="trial-content">
+      <h2>Start Your 30-Day Free Trial</h2>
+      <p>
+        No credit card required. Full access to all Ministry features. 
+        See the difference incentivized attendance makes in your kids ministry.
+      </p>
+      <form class="trial-form" action="#" method="POST">
+        <input type="text" name="church" placeholder="Church Name" required>
+        <input type="email" name="email" placeholder="Your Email" required>
+        <button type="submit" class="btn btn-accent btn-large">
+          Start Free Trial →
+        </button>
+      </form>
+      <p class="trial-note">
+        🔒 We respect your privacy. No spam, unsubscribe anytime.
+      </p>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section class="faq" id="faq">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-label">❓ FAQ</div>
+        <h2 class="section-title">Common Questions</h2>
+      </div>
+      
+      <div class="faq-grid">
+        <div class="faq-item">
+          <h3 class="faq-question">What hardware do I need?</h3>
+          <p class="faq-answer">
+            ChurchCheck runs in any web browser on tablets, laptops, or touch-screen 
+            computers. For label printing, we support Dymo LabelWriter printers 
+            (450 series recommended).
+          </p>
+        </div>
+        
+        <div class="faq-item">
+          <h3 class="faq-question">Can I import my existing data?</h3>
+          <p class="faq-answer">
+            Yes! Our smart import tool accepts CSV files and helps you map columns 
+            to our database fields. Most churches are up and running in under an hour.
+          </p>
+        </div>
+        
+        <div class="faq-item">
+          <h3 class="faq-question">Does it work offline?</h3>
+          <p class="faq-answer">
+            ChurchCheck includes a desktop app for Mac and Windows that works 
+            even without internet. Data syncs automatically when you're back online.
+          </p>
+        </div>
+        
+        <div class="faq-item">
+          <h3 class="faq-question">How do the attendance incentives work?</h3>
+          <p class="faq-answer">
+            Kids earn attendance streaks (consecutive weeks), milestone badges 
+            (Bronze at 4 weeks, Silver at 8, Gold at 12), and can earn rewards 
+            you customize. It's all automatic — no extra work for volunteers.
+          </p>
+        </div>
+        
+        <div class="faq-item">
+          <h3 class="faq-question">Is our data secure?</h3>
+          <p class="faq-answer">
+            Absolutely. All data is encrypted, we never sell your information, 
+            and you can export or delete your data anytime. We take child 
+            safety and privacy seriously.
+          </p>
+        </div>
+        
+        <div class="faq-item">
+          <h3 class="faq-question">Can we turn off the incentives?</h3>
+          <p class="faq-answer">
+            Yes! Every incentive feature can be toggled on or off. Use 
+            ChurchCheck as a simple, secure check-in system — or enable 
+            the full rewards experience. Your choice.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-content">
+      <div class="footer-brand">
+        <a href="#" class="logo">
+          <div class="logo-icon"></div>
+          ChurchCheck
+        </a>
+        <p>
+          The kids check-in system that makes them want to come back. 
+          Secure, engaging, and built for growing ministries.
+        </p>
+      </div>
+      
+      <div class="footer-column">
+        <h4>Product</h4>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#">Integrations</a>
+        <a href="#">Roadmap</a>
+      </div>
+      
+      <div class="footer-column">
+        <h4>Resources</h4>
+        <a href="#">Documentation</a>
+        <a href="#">Video Tutorials</a>
+        <a href="#">Blog</a>
+        <a href="#">Support</a>
+      </div>
+      
+      <div class="footer-column">
+        <h4>Company</h4>
+        <a href="#">About Us</a>
+        <a href="#">Contact</a>
+        <a href="#">Privacy Policy</a>
+        <a href="#">Terms of Service</a>
+      </div>
+    </div>
+    
+    <div class="footer-bottom">
+      <p>© 2026 ChurchCheck. All rights reserved.</p>
+      <p>Made with ❤️ for churches everywhere</p>
+    </div>
+  </footer>
+
+  <script>
+    // Smooth scrolling for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+        }
+      });
+    });
+
+    // Form submission handling
+    document.querySelector('.trial-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const church = this.querySelector('input[name="church"]').value;
+      const email = this.querySelector('input[name="email"]').value;
+      
+      // Here you would send to your backend
+      alert(`Thanks for signing up, ${church}! We'll send setup instructions to ${email}.`);
+      this.reset();
+    });
+
+    // PNG Sequence Animation for Hero Avatar
+    (function() {
+      const avatarContainer = document.getElementById('heroAvatar');
+      const totalFrames = 115; // boy-test-000 to boy-test-114
+      const frameRate = 24; // frames per second
+      let currentFrame = 0;
+      const images = [];
+      let imagesLoaded = 0;
+      
+      // Preload all images
+      for (let i = 0; i <= 114; i++) {
+        const img = new Image();
+        const frameNum = String(i).padStart(3, '0');
+        img.src = `avatars/boy-ranger/boy-test-${frameNum}.png`;
+        img.onload = () => {
+          imagesLoaded++;
+          if (imagesLoaded === totalFrames) {
+            startAnimation();
+          }
+        };
+        images.push(img);
+        avatarContainer.appendChild(img);
+      }
+      
+      // Show first frame immediately
+      if (images[0]) {
+        images[0].classList.add('active');
+      }
+      
+      function startAnimation() {
+        setInterval(() => {
+          images[currentFrame].classList.remove('active');
+          currentFrame = (currentFrame + 1) % totalFrames;
+          images[currentFrame].classList.add('active');
+        }, 1000 / frameRate);
+      }
+    })();
+
+    // Demo Functionality
+    let phoneDigits = [];
+    let selectedChildren = [];
+    
+    function openDemo() {
+      document.getElementById('demoOverlay').classList.add('active');
+      document.body.style.overflow = 'hidden';
+      resetDemo();
+    }
+    
+    function closeDemo() {
+      document.getElementById('demoOverlay').classList.remove('active');
+      document.body.style.overflow = '';
+      resetDemo();
+    }
+    
+    function resetDemo() {
+      phoneDigits = [];
+      selectedChildren = [];
+      updatePhoneDisplay();
+      document.querySelectorAll('.demo-child-card').forEach(c => c.classList.remove('selected'));
+      goToScreen(1);
+    }
+    
+    function addDigit(digit) {
+      if (phoneDigits.length < 10) {
+        phoneDigits.push(digit);
+        updatePhoneDisplay();
+      }
+    }
+    
+    function clearPhone() {
+      phoneDigits = [];
+      updatePhoneDisplay();
+    }
+    
+    function updatePhoneDisplay() {
+      for (let i = 1; i <= 10; i++) {
+        document.getElementById('phone' + i).value = phoneDigits[i-1] || '';
+      }
+    }
+    
+    function submitPhone() {
+      if (phoneDigits.length >= 3) { // Accept any input for demo
+        goToScreen(2);
+      }
+    }
+    
+    function toggleChild(element, name) {
+      element.classList.toggle('selected');
+      if (selectedChildren.includes(name)) {
+        selectedChildren = selectedChildren.filter(n => n !== name);
+      } else {
+        selectedChildren.push(name);
+      }
+    }
+    
+    function checkIn() {
+      if (selectedChildren.length === 0) {
+        selectedChildren = ['Emma']; // Default to Emma if nothing selected
+      }
+      document.getElementById('celebrationName').textContent = selectedChildren[0] + ' Johnson';
+      goToScreen(3);
+      triggerConfetti();
+    }
+    
+    function showLabels() {
+      goToScreen(4);
+    }
+    
+    function goToScreen(num) {
+      document.querySelectorAll('.demo-screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('demoScreen' + num).classList.add('active');
+    }
+    
+    function triggerConfetti() {
+      const container = document.getElementById('confettiContainer');
+      container.innerHTML = '';
+      const colors = ['#F59E0B', '#4F46E5', '#10B981', '#EF4444', '#8B5CF6', '#EC4899'];
+      
+      for (let i = 0; i < 50; i++) {
+        const piece = document.createElement('div');
+        piece.className = 'confetti-piece';
+        piece.style.left = Math.random() * 100 + '%';
+        piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+        piece.style.animationDelay = Math.random() * 0.5 + 's';
+        piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
+        container.appendChild(piece);
+      }
+    }
+    
+    // Close demo on escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeDemo();
+      }
+    });
+  </script>
+</body>
+</html>
+

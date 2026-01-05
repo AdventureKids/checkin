@@ -1,0 +1,17 @@
+# Render Blueprint for ChurchCheck Backend
+services:
+  - type: web
+    name: churchcheck-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DISABLE_PRINTING
+        value: "true"
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+

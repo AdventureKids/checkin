@@ -17,8 +17,10 @@ const DISABLE_PRINTING = process.env.DISABLE_PRINTING === 'true'; // Disable pri
 // ============================================
 // AVATAR SYSTEM - Single explorer character
 // ============================================
-const AVATAR_STATIC_PATH = path.join(__dirname, 'public', 'avatars', 'boy-ranger', 'boy-test-000.png');
+const PUBLIC_PATH = process.env.PUBLIC_PATH || path.join(__dirname, 'public');
+const AVATAR_STATIC_PATH = path.join(PUBLIC_PATH, 'avatars', 'boy-ranger', 'boy-test-000.png');
 const DEFAULT_AVATAR = 'explorer';
+console.log('📁 Public path:', PUBLIC_PATH);
 
 // Get avatar URL - returns the static PNG for all avatars
 function getAvatarUrl() {
@@ -44,16 +46,14 @@ async function fetchAvatarImage(avatarId) {
 }
 
 const app = express();
-
-// CORS configuration - allow all origins for flexibility
 app.use(cors({
-  origin: true, // Reflects the request origin - works with credentials
+  origin: true, // Allow all origins
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increase limit for large CSV imports
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ============================================
 // ADMIN AUTH CONFIG
@@ -74,7 +74,11 @@ function generateSessionToken() {
 // DATABASE SETUP
 // ============================================
 
-const db = new Database('kidcheck.db');
+// Use environment variable for database path (for Electron/Render) or default
+// On Render, use persistent disk at /data
+const DB_PATH = process.env.DB_PATH || (process.env.NODE_ENV === 'production' && fs.existsSync('/data') ? '/data/kidcheck.db' : 'kidcheck.db');
+console.log('📁 Database path:', DB_PATH);
+const db = new Database(DB_PATH);
 
 // Create tables
 db.exec(`
@@ -222,6 +226,14 @@ try {
     db.exec('ALTER TABLE templates ADD COLUMN track_streaks INTEGER DEFAULT 1');
     console.log('✅ Migration: Added track_streaks to templates table');
   }
+  if (!templateColumns.find(c => c.name === 'print_volunteer_badges')) {
+    db.exec('ALTER TABLE templates ADD COLUMN print_volunteer_badges INTEGER DEFAULT 1');
+    console.log('✅ Migration: Added print_volunteer_badges to templates table');
+  }
+  if (!templateColumns.find(c => c.name === 'label_settings')) {
+    db.exec('ALTER TABLE templates ADD COLUMN label_settings TEXT');
+    console.log('✅ Migration: Added label_settings to templates table');
+  }
   
   // Create child_template_streaks table if it doesn't exist
   db.exec(`
@@ -256,6 +268,89 @@ try {
     )
   `);
   console.log('✅ Created pending_rewards table');
+  
+  // Add address field to families if it doesn't exist
+  const familyColumns = db.prepare("PRAGMA table_info(families)").all();
+  if (!familyColumns.find(c => c.name === 'address')) {
+    db.exec('ALTER TABLE families ADD COLUMN address TEXT');
+    console.log('✅ Migration: Added address to families table');
+  }
+  
+  // Create admin_users table if it doesn't exist
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT DEFAULT 'admin',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('✅ Created admin_users table');
+  
+  // Create volunteer_compliance table for tracking background checks and training
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS volunteer_compliance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      volunteer_id INTEGER NOT NULL UNIQUE,
+      livescan_completed INTEGER DEFAULT 0,
+      livescan_date TEXT,
+      mandatory_reporting_completed INTEGER DEFAULT 0,
+      mandatory_reporting_date TEXT,
+      notes TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (volunteer_id) REFERENCES children(id)
+    )
+  `);
+  console.log('✅ Created volunteer_compliance table');
+  
+  // Create volunteer_details table for extended volunteer info
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS volunteer_details (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      volunteer_id INTEGER NOT NULL UNIQUE,
+      address TEXT,
+      city TEXT,
+      state TEXT,
+      zip TEXT,
+      dob TEXT,
+      service_area TEXT,
+      serving_frequency TEXT,
+      start_date TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (volunteer_id) REFERENCES children(id)
+    )
+  `);
+  console.log('✅ Created volunteer_details table');
+  
+  // Create custom_fields table for user-defined fields
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS custom_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      field_name TEXT NOT NULL,
+      field_label TEXT NOT NULL,
+      field_type TEXT DEFAULT 'text',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(entity_type, field_name)
+    )
+  `);
+  console.log('✅ Created custom_fields table');
+  
+  // Create custom_field_values table for storing custom field data
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS custom_field_values (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      field_id INTEGER NOT NULL,
+      value TEXT,
+      FOREIGN KEY (field_id) REFERENCES custom_fields(id),
+      UNIQUE(entity_type, entity_id, field_id)
+    )
+  `);
+  console.log('✅ Created custom_field_values table');
 } catch (err) {
   console.log('Migration note:', err.message);
 }
@@ -503,9 +598,10 @@ if (familyCount.count === 0) {
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   
+  // Check master admin first
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
     const token = generateSessionToken();
-    activeSessions.set(token, { username, loginTime: Date.now() });
+    activeSessions.set(token, { username, role: 'superadmin', loginTime: Date.now() });
     
     // Clean up old sessions (older than 24 hours)
     const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
@@ -515,10 +611,23 @@ app.post('/api/auth/login', (req, res) => {
       }
     }
     
-    res.json({ success: true, token });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
+    return res.json({ success: true, token });
   }
+  
+  // Check database users
+  try {
+    const user = db.prepare('SELECT * FROM admin_users WHERE LOWER(username) = LOWER(?)').get(username);
+    if (user && user.password === password) {
+      const token = generateSessionToken();
+      activeSessions.set(token, { username: user.username, role: user.role, loginTime: Date.now() });
+      
+      return res.json({ success: true, token });
+    }
+  } catch (err) {
+    console.error('Login DB error:', err);
+  }
+  
+  res.status(401).json({ error: 'Invalid credentials' });
 });
 
 // Verify token
@@ -543,6 +652,607 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// ============================================
+// CUSTOM FIELDS ENDPOINTS
+// ============================================
+
+// Get custom fields for an entity type (family, child, volunteer)
+app.get('/api/custom-fields/:entityType', (req, res) => {
+  try {
+    const fields = db.prepare('SELECT * FROM custom_fields WHERE entity_type = ? ORDER BY field_label').all(req.params.entityType);
+    res.json(fields);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new custom field
+app.post('/api/custom-fields', (req, res) => {
+  const { entity_type, field_name, field_label, field_type } = req.body;
+  
+  if (!entity_type || !field_name || !field_label) {
+    return res.status(400).json({ error: 'entity_type, field_name, and field_label are required' });
+  }
+  
+  // Sanitize field_name to be database-safe
+  const safeName = field_name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  
+  try {
+    const result = db.prepare('INSERT INTO custom_fields (entity_type, field_name, field_label, field_type) VALUES (?, ?, ?, ?)').run(
+      entity_type,
+      safeName,
+      field_label,
+      field_type || 'text'
+    );
+    res.json({ success: true, id: result.lastInsertRowid, field_name: safeName });
+  } catch (err) {
+    if (err.message.includes('UNIQUE constraint')) {
+      return res.status(400).json({ error: 'Field already exists' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get custom field values for an entity
+app.get('/api/custom-field-values/:entityType/:entityId', (req, res) => {
+  try {
+    const values = db.prepare(`
+      SELECT cf.field_name, cf.field_label, cfv.value 
+      FROM custom_field_values cfv
+      JOIN custom_fields cf ON cfv.field_id = cf.id
+      WHERE cfv.entity_type = ? AND cfv.entity_id = ?
+    `).all(req.params.entityType, req.params.entityId);
+    
+    // Convert to object
+    const result = {};
+    values.forEach(v => { result[v.field_name] = v.value; });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set custom field value
+app.post('/api/custom-field-values', (req, res) => {
+  const { entity_type, entity_id, field_id, value } = req.body;
+  
+  try {
+    db.prepare(`
+      INSERT INTO custom_field_values (entity_type, entity_id, field_id, value) 
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(entity_type, entity_id, field_id) DO UPDATE SET value = excluded.value
+    `).run(entity_type, entity_id, field_id, value);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// ============================================
+// VOLUNTEER COMPLIANCE ENDPOINTS
+// ============================================
+
+// Get compliance status for a volunteer
+app.get('/api/volunteer-compliance/:volunteerId', (req, res) => {
+  try {
+    let compliance = db.prepare('SELECT * FROM volunteer_compliance WHERE volunteer_id = ?').get(req.params.volunteerId);
+    
+    if (!compliance) {
+      // Create default record if doesn't exist
+      db.prepare('INSERT INTO volunteer_compliance (volunteer_id) VALUES (?)').run(req.params.volunteerId);
+      compliance = {
+        volunteer_id: parseInt(req.params.volunteerId),
+        livescan_completed: 0,
+        livescan_date: null,
+        mandatory_reporting_completed: 0,
+        mandatory_reporting_date: null,
+        notes: null
+      };
+    }
+    
+    res.json({
+      ...compliance,
+      livescan_completed: Boolean(compliance.livescan_completed),
+      mandatory_reporting_completed: Boolean(compliance.mandatory_reporting_completed)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update compliance status for a volunteer
+app.put('/api/volunteer-compliance/:volunteerId', (req, res) => {
+  const { livescan_completed, livescan_date, mandatory_reporting_completed, mandatory_reporting_date, notes } = req.body;
+  
+  try {
+    // Upsert compliance record
+    db.prepare(`
+      INSERT INTO volunteer_compliance (volunteer_id, livescan_completed, livescan_date, mandatory_reporting_completed, mandatory_reporting_date, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(volunteer_id) DO UPDATE SET
+        livescan_completed = excluded.livescan_completed,
+        livescan_date = excluded.livescan_date,
+        mandatory_reporting_completed = excluded.mandatory_reporting_completed,
+        mandatory_reporting_date = excluded.mandatory_reporting_date,
+        notes = excluded.notes,
+        updated_at = datetime('now')
+    `).run(
+      req.params.volunteerId,
+      livescan_completed ? 1 : 0,
+      livescan_date || null,
+      mandatory_reporting_completed ? 1 : 0,
+      mandatory_reporting_date || null,
+      notes || null
+    );
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all volunteers with compliance status
+app.get('/api/volunteers-with-compliance', (req, res) => {
+  try {
+    const volunteers = db.prepare(`
+      SELECT 
+        c.id, c.first_name, c.last_name, c.total_checkins,
+        f.id as family_id, f.phone, f.email, f.created_at,
+        COALESCE(vc.livescan_completed, 0) as livescan_completed,
+        vc.livescan_date,
+        COALESCE(vc.mandatory_reporting_completed, 0) as mandatory_reporting_completed,
+        vc.mandatory_reporting_date,
+        vc.notes as compliance_notes
+      FROM children c
+      JOIN families f ON c.family_id = f.id
+      LEFT JOIN volunteer_compliance vc ON c.id = vc.volunteer_id
+      WHERE c.notes LIKE '%Volunteer%' OR f.name LIKE '%(Volunteer)%'
+      ORDER BY c.last_name, c.first_name
+    `).all();
+    
+    res.json(volunteers.map(v => ({
+      ...v,
+      livescan_completed: Boolean(v.livescan_completed),
+      mandatory_reporting_completed: Boolean(v.mandatory_reporting_completed)
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// CSV IMPORT ENDPOINTS
+// ============================================
+
+// Import volunteers from CSV data
+app.post('/api/import/volunteers', (req, res) => {
+  const { data, columnMapping, customFields, valueMappings } = req.body;
+  
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: 'No data provided' });
+  }
+  
+  // Helper function to check if a value means "completed" based on value mappings
+  const isCompletedValue = (fieldKey, value) => {
+    if (!value) return false;
+    const mapping = valueMappings?.[fieldKey];
+    if (mapping && mapping.completedValues && mapping.completedValues.length > 0) {
+      return mapping.completedValues.includes(value);
+    }
+    // Fallback: if no value mappings, treat any non-empty value as completed
+    return !!value && String(value).trim() !== '';
+  };
+  
+  // Helper to extract date if value is a date, otherwise return the value as-is or null
+  const extractDateValue = (fieldKey, value) => {
+    if (!value) return null;
+    const mapping = valueMappings?.[fieldKey];
+    if (mapping && mapping.treatAsDate) {
+      // If it's a date field, return the value as the date
+      return String(value).trim() || null;
+    }
+    // If completedValues exists and value is in it, it might be a status like "o" not a date
+    if (mapping && mapping.completedValues && mapping.completedValues.includes(value)) {
+      // Not a date, just a completion status - return today's date or null
+      return null;
+    }
+    // Default: return the value if it looks like a date
+    const v = String(value).trim();
+    if (/\d/.test(v)) return v;
+    return null;
+  };
+  
+  let imported = 0;
+  let updated = 0; // Existing parents marked as volunteers
+  let skipped = 0;
+  let errors = [];
+  
+  try {
+    // First, create any new custom fields
+    const customFieldIds = {};
+    if (customFields && customFields.length > 0) {
+      const insertField = db.prepare('INSERT OR IGNORE INTO custom_fields (entity_type, field_name, field_label, field_type) VALUES (?, ?, ?, ?)');
+      const getField = db.prepare('SELECT id FROM custom_fields WHERE entity_type = ? AND field_name = ?');
+      
+      for (const cf of customFields) {
+        const safeName = cf.field_name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        insertField.run('volunteer', safeName, cf.field_label, 'text');
+        const field = getField.get('volunteer', safeName);
+        if (field) customFieldIds[cf.csv_column] = field.id;
+      }
+    }
+    
+    // Prepared statements
+    const checkPhone = db.prepare('SELECT id, name, parent_name FROM families WHERE phone = ?');
+    const updateFamilyAsVolunteer = db.prepare('UPDATE families SET is_volunteer = 1 WHERE id = ?');
+    const insertFamily = db.prepare('INSERT INTO families (name, phone, email, parent_name, is_volunteer) VALUES (?, ?, ?, ?, 1)');
+    const insertChild = db.prepare('INSERT INTO children (family_id, first_name, last_name, name, notes, avatar) VALUES (?, ?, ?, ?, ?, ?)');
+    const insertCustomValue = db.prepare('INSERT OR REPLACE INTO custom_field_values (entity_type, entity_id, field_id, value) VALUES (?, ?, ?, ?)');
+    const getVolunteerChild = db.prepare('SELECT id FROM children WHERE family_id = ? AND notes LIKE ?');
+    
+    // Compliance with livescan and mandatory reporting dates
+    const upsertCompliance = db.prepare(`
+      INSERT INTO volunteer_compliance (volunteer_id, livescan_completed, livescan_date, mandatory_reporting_completed, mandatory_reporting_date)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(volunteer_id) DO UPDATE SET
+        livescan_completed = COALESCE(excluded.livescan_completed, livescan_completed),
+        livescan_date = COALESCE(excluded.livescan_date, livescan_date),
+        mandatory_reporting_completed = COALESCE(excluded.mandatory_reporting_completed, mandatory_reporting_completed),
+        mandatory_reporting_date = COALESCE(excluded.mandatory_reporting_date, mandatory_reporting_date),
+        updated_at = datetime('now')
+    `);
+    
+    // Volunteer details (address, DOB, service area, etc.)
+    const upsertDetails = db.prepare(`
+      INSERT INTO volunteer_details (volunteer_id, address, city, state, zip, dob, service_area, serving_frequency, start_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(volunteer_id) DO UPDATE SET
+        address = COALESCE(excluded.address, address),
+        city = COALESCE(excluded.city, city),
+        state = COALESCE(excluded.state, state),
+        zip = COALESCE(excluded.zip, zip),
+        dob = COALESCE(excluded.dob, dob),
+        service_area = COALESCE(excluded.service_area, service_area),
+        serving_frequency = COALESCE(excluded.serving_frequency, serving_frequency),
+        start_date = COALESCE(excluded.start_date, start_date),
+        updated_at = datetime('now')
+    `);
+    
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      
+      try {
+        // Extract required mapped fields
+        const firstName = row[columnMapping.first_name] || '';
+        const lastName = row[columnMapping.last_name] || '';
+        const phone = (row[columnMapping.phone] || '').replace(/\D/g, '');
+        const email = row[columnMapping.email] || '';
+        
+        // Extract optional standard fields
+        const address = row[columnMapping.address] || null;
+        const city = row[columnMapping.city] || null;
+        const state = row[columnMapping.state] || null;
+        const zip = row[columnMapping.zip] || null;
+        const dob = row[columnMapping.dob] || null;
+        const serviceArea = row[columnMapping.service_area] || null;
+        // Get raw values for compliance fields
+        const livescanRawValue = row[columnMapping.livescan_date] || null;
+        const mandatoryReporterRawValue = row[columnMapping.mandatory_reporter_date] || null;
+        
+        // Determine completion status based on value mappings
+        const livescanCompleted = isCompletedValue('livescan_date', livescanRawValue);
+        const mandatoryReporterCompleted = isCompletedValue('mandatory_reporter_date', mandatoryReporterRawValue);
+        
+        // Extract dates (if the values are actual dates)
+        const livescanDate = extractDateValue('livescan_date', livescanRawValue);
+        const mandatoryReporterDate = extractDateValue('mandatory_reporter_date', mandatoryReporterRawValue);
+        const servingFrequency = row[columnMapping.serving_frequency] || null;
+        const startDate = row[columnMapping.start_date] || null;
+        
+        if (!firstName || !phone) {
+          skipped++;
+          errors.push(`Row ${i + 2}: Missing required field (first name or phone)`);
+          continue;
+        }
+        
+        // Check if phone already exists (parent might already be in system)
+        const existing = checkPhone.get(phone);
+        let familyId;
+        let volunteerId;
+        
+        if (existing) {
+          // MERGE: Mark existing parent as a volunteer
+          familyId = existing.id;
+          updateFamilyAsVolunteer.run(familyId);
+          
+          // Check if a volunteer child record already exists for this family
+          let volunteerChild = getVolunteerChild.get(familyId, '%Volunteer%');
+          
+          if (!volunteerChild) {
+            // Create a volunteer child record linked to this parent
+            const childResult = insertChild.run(
+              familyId, 
+              firstName, 
+              lastName, 
+              `${firstName} ${lastName}`.trim(), 
+              'Volunteer (Parent)', 
+              'explorer'
+            );
+            volunteerId = childResult.lastInsertRowid;
+          } else {
+            volunteerId = volunteerChild.id;
+          }
+          
+          updated++;
+        } else {
+          // NEW: Create new volunteer-only family
+          const familyName = `${firstName} ${lastName}`.trim();
+          const familyResult = insertFamily.run(familyName, phone, email, familyName);
+          familyId = familyResult.lastInsertRowid;
+          
+          // Create child entry (volunteer profile)
+          const childResult = insertChild.run(
+            familyId, 
+            firstName, 
+            lastName, 
+            `${firstName} ${lastName}`.trim(), 
+            'Volunteer', 
+            'explorer'
+          );
+          volunteerId = childResult.lastInsertRowid;
+          
+          imported++;
+        }
+        
+        // Save compliance data (livescan, mandatory reporter)
+        // Use the completion status determined from value mappings
+        upsertCompliance.run(
+          volunteerId,
+          livescanCompleted ? 1 : 0,
+          livescanDate,
+          mandatoryReporterCompleted ? 1 : 0,
+          mandatoryReporterDate
+        );
+        
+        // Save volunteer details (address, DOB, service area, etc.)
+        upsertDetails.run(
+          volunteerId,
+          address,
+          city,
+          state,
+          zip,
+          dob,
+          serviceArea,
+          servingFrequency,
+          startDate
+        );
+        
+        // Save custom field values linked to the volunteer
+        for (const [csvCol, fieldId] of Object.entries(customFieldIds)) {
+          if (row[csvCol]) {
+            insertCustomValue.run('volunteer', volunteerId, fieldId, row[csvCol]);
+          }
+        }
+        
+      } catch (rowErr) {
+        errors.push(`Row ${i + 2}: ${rowErr.message}`);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      imported, // New volunteer-only records created
+      updated,  // Existing parents marked as volunteers
+      skipped, 
+      total: data.length,
+      errors: errors.slice(0, 10) // Limit error messages
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Import families from CSV data
+app.post('/api/import/families', (req, res) => {
+  const { data, columnMapping, customFields } = req.body;
+  
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return res.status(400).json({ error: 'No data provided' });
+  }
+  
+  let imported = 0;
+  let skipped = 0;
+  let errors = [];
+  
+  try {
+    // First, create any new custom fields
+    const customFieldIds = {};
+    if (customFields && customFields.length > 0) {
+      const insertField = db.prepare('INSERT OR IGNORE INTO custom_fields (entity_type, field_name, field_label, field_type) VALUES (?, ?, ?, ?)');
+      const getField = db.prepare('SELECT id FROM custom_fields WHERE entity_type = ? AND field_name = ?');
+      
+      for (const cf of customFields) {
+        const safeName = cf.field_name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        insertField.run('family', safeName, cf.field_label, 'text');
+        const field = getField.get('family', safeName);
+        if (field) customFieldIds[cf.csv_column] = field.id;
+      }
+    }
+    
+    const insertFamily = db.prepare('INSERT INTO families (name, phone, email, parent_name, address) VALUES (?, ?, ?, ?, ?)');
+    const insertChild = db.prepare('INSERT INTO children (family_id, first_name, last_name, name, age, birthday, gender, pin, avatar, allergies, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const insertCustomValue = db.prepare('INSERT OR REPLACE INTO custom_field_values (entity_type, entity_id, field_id, value) VALUES (?, ?, ?, ?)');
+    const checkPhone = db.prepare('SELECT id FROM families WHERE phone = ?');
+    
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      
+      try {
+        // Extract mapped fields
+        const parentName = row[columnMapping.parent_name] || '';
+        const phone = (row[columnMapping.phone] || '').replace(/\D/g, '');
+        const email = row[columnMapping.email] || '';
+        const address = row[columnMapping.address] || '';
+        const childFirstName = row[columnMapping.child_first_name] || '';
+        const childLastName = row[columnMapping.child_last_name] || '';
+        const childBirthday = row[columnMapping.child_birthday] || '';
+        const childGender = row[columnMapping.child_gender] || '';
+        const childAllergies = row[columnMapping.child_allergies] || '';
+        const childNotes = row[columnMapping.child_notes] || '';
+        
+        if (!phone) {
+          skipped++;
+          continue;
+        }
+        
+        // Check if phone already exists
+        const existing = checkPhone.get(phone);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+        
+        // Build family name
+        const nameParts = parentName.trim().split(' ');
+        const familyLastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0];
+        const familyName = `The ${familyLastName} Family`;
+        
+        // Create family entry
+        const familyResult = insertFamily.run(familyName, phone, email, parentName, address);
+        const familyId = familyResult.lastInsertRowid;
+        
+        // Create child if child info provided
+        if (childFirstName) {
+          const childName = `${childFirstName} ${childLastName}`.trim();
+          // Generate PIN from birthday or random
+          let pin = '';
+          if (childBirthday) {
+            try {
+              const bdate = new Date(childBirthday);
+              pin = `${String(bdate.getMonth() + 1).padStart(2, '0')}${String(bdate.getDate()).padStart(2, '0')}${String(bdate.getFullYear()).slice(-2)}`;
+            } catch {}
+          }
+          if (!pin) {
+            pin = String(Math.floor(100000 + Math.random() * 900000));
+          }
+          
+          // Calculate age
+          let age = null;
+          if (childBirthday) {
+            try {
+              const bdate = new Date(childBirthday);
+              const today = new Date();
+              age = today.getFullYear() - bdate.getFullYear();
+            } catch {}
+          }
+          
+          const childResult = insertChild.run(familyId, childFirstName, childLastName, childName, age, childBirthday, childGender, pin, 'explorer', childAllergies, childNotes);
+          
+          // Save custom field values for child
+          for (const [csvCol, fieldId] of Object.entries(customFieldIds)) {
+            if (row[csvCol]) {
+              insertCustomValue.run('child', childResult.lastInsertRowid, fieldId, row[csvCol]);
+            }
+          }
+        }
+        
+        // Save custom field values for family
+        for (const [csvCol, fieldId] of Object.entries(customFieldIds)) {
+          if (row[csvCol]) {
+            insertCustomValue.run('family', familyId, fieldId, row[csvCol]);
+          }
+        }
+        
+        imported++;
+      } catch (rowErr) {
+        errors.push(`Row ${i + 1}: ${rowErr.message}`);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      imported, 
+      skipped, 
+      total: data.length,
+      errors: errors.slice(0, 10)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// USER MANAGEMENT ENDPOINTS
+// ============================================
+
+// Get all admin users
+app.get('/api/users', (req, res) => {
+  try {
+    const users = db.prepare('SELECT id, username, role, created_at FROM admin_users ORDER BY created_at DESC').all();
+    // Add the master admin to the list
+    const allUsers = [
+      { id: 0, username: ADMIN_USERNAME, role: 'superadmin', created_at: null },
+      ...users
+    ];
+    res.json(allUsers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new admin user
+app.post('/api/users', (req, res) => {
+  const { username, password, role } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  
+  if (username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+    return res.status(400).json({ error: 'Username already exists' });
+  }
+  
+  try {
+    const existing = db.prepare('SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?)').get(username);
+    if (existing) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    
+    // In production, you'd hash the password. For simplicity, storing as-is.
+    // TODO: Add bcrypt password hashing
+    const result = db.prepare('INSERT INTO admin_users (username, password, role) VALUES (?, ?, ?)').run(
+      username.trim(),
+      password,
+      role || 'admin'
+    );
+    
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete admin user
+app.delete('/api/users/:id', (req, res) => {
+  const userId = parseInt(req.params.id);
+  
+  if (userId === 0) {
+    return res.status(400).json({ error: 'Cannot delete the master admin' });
+  }
+  
+  try {
+    db.prepare('DELETE FROM admin_users WHERE id = ?').run(userId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Auth middleware for protected routes
 function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -559,12 +1269,13 @@ function requireAuth(req, res, next) {
 // DATABASE API ENDPOINTS
 // ============================================
 
-// Get child by PIN (for kid login)
+// Get child by PIN (for kid login) - also works for volunteers
 app.get('/api/child/pin/:pin', (req, res) => {
   const pin = req.params.pin;
   
   const child = db.prepare(`
-    SELECT c.*, f.name as family_name, f.id as family_id 
+    SELECT c.*, f.name as family_name, f.id as family_id,
+           CASE WHEN c.notes LIKE '%Volunteer%' THEN 1 ELSE 0 END as is_volunteer
     FROM children c 
     JOIN families f ON c.family_id = f.id 
     WHERE c.pin = ?
@@ -572,6 +1283,12 @@ app.get('/api/child/pin/:pin', (req, res) => {
   
   if (!child) {
     return res.status(404).json({ error: 'PIN not found' });
+  }
+  
+  // If this is a volunteer, get their details
+  let volunteerDetails = null;
+  if (child.is_volunteer) {
+    volunteerDetails = db.prepare('SELECT * FROM volunteer_details WHERE volunteer_id = ?').get(child.id) || {};
   }
   
   // Get next upcoming reward for this child
@@ -626,6 +1343,12 @@ app.get('/api/child/pin/:pin', (req, res) => {
       progress: nextReward.trigger_type === 'checkin_count' 
         ? child.total_checkins 
         : child.streak
+    } : null,
+    // Volunteer-specific fields
+    isVolunteer: !!child.is_volunteer,
+    volunteerDetails: child.is_volunteer ? {
+      serviceArea: volunteerDetails?.service_area || null,
+      servingFrequency: volunteerDetails?.serving_frequency || null
     } : null
   });
 });
@@ -715,8 +1438,9 @@ app.post('/api/family', (req, res) => {
       return res.status(400).json({ error: 'Phone number already registered' });
     }
     
-    const insertFamily = db.prepare('INSERT INTO families (name, phone, email, parent_name) VALUES (?, ?, ?, ?)');
-    const result = insertFamily.run(name, cleanPhone, email, parentName);
+    const address = req.body.address || '';
+    const insertFamily = db.prepare('INSERT INTO families (name, phone, email, parent_name, address) VALUES (?, ?, ?, ?, ?)');
+    const result = insertFamily.run(name, cleanPhone, email, parentName, address);
     const familyId = result.lastInsertRowid;
     
     const insertChild = db.prepare('INSERT INTO children (family_id, first_name, last_name, name, age, birthday, gender, pin, avatar, allergies, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -747,6 +1471,26 @@ app.post('/api/family', (req, res) => {
     res.json({ success: true, familyId });
   } catch (err) {
     console.error('Error creating family:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get today's check-ins
+app.get('/api/checkins/today', (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const checkins = db.prepare(`
+      SELECT c.*, ch.name as child_name, ch.first_name, ch.last_name, f.name as family_name
+      FROM checkins c
+      LEFT JOIN children ch ON c.child_id = ch.id
+      LEFT JOIN families f ON c.family_id = f.id
+      WHERE date(c.checked_in_at) = date(?)
+      ORDER BY c.checked_in_at DESC
+    `).all(today);
+    
+    res.json(checkins);
+  } catch (err) {
+    console.error('Error getting today checkins:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -951,8 +1695,7 @@ app.get('/api/families', (req, res) => {
 app.get('/api/volunteers', (req, res) => {
   // Get all families marked as volunteers (includes both volunteer-only and parent-volunteers)
   const volunteerFamilies = db.prepare(`
-    SELECT f.*, 
-           CASE WHEN f.name LIKE '%(Volunteer)%' THEN 1 ELSE 0 END as is_volunteer_only
+    SELECT f.*
     FROM families f 
     WHERE f.is_volunteer = 1
     ORDER BY f.name
@@ -961,28 +1704,47 @@ app.get('/api/volunteers', (req, res) => {
   const result = volunteerFamilies.map(family => {
     const children = db.prepare('SELECT * FROM children WHERE family_id = ?').all(family.id);
     
-    // For volunteer-only families, the first "child" is the volunteer themselves
-    // For parent-volunteers, we use the parent info
-    const isVolunteerOnly = family.is_volunteer_only === 1;
-    const volunteer = isVolunteerOnly ? (children[0] || {}) : {};
+    // Find the volunteer profile (child record with "Volunteer" in notes)
+    const volunteerProfile = children.find(c => c.notes && c.notes.includes('Volunteer'));
+    
+    // Check if there are real children (notes is null or empty string = real child)
+    const realChildren = children.filter(c => c.notes === null || c.notes === '');
+    
+    // Is also parent if:
+    // 1. They have real children in the system, OR
+    // 2. Their volunteer profile is marked as "Volunteer (Parent)"
+    const isAlsoParent = realChildren.length > 0 || (volunteerProfile && volunteerProfile.notes === 'Volunteer (Parent)');
+    
+    // Use volunteer profile data if available
+    const volunteer = volunteerProfile || {};
+    
+    // Get volunteer details (service area, serving frequency, etc.)
+    let details = {};
+    if (volunteer.id) {
+      details = db.prepare('SELECT * FROM volunteer_details WHERE volunteer_id = ?').get(volunteer.id) || {};
+    }
     
     return {
       id: family.id,
       name: family.name.replace(' (Volunteer)', ''),
       phone: family.phone,
       email: family.email,
-      volunteer_name: isVolunteerOnly 
-        ? (volunteer.name || family.parent_name)
-        : family.parent_name,
-      first_name: isVolunteerOnly ? (volunteer.first_name || '') : family.parent_name?.split(' ')[0] || '',
-      last_name: isVolunteerOnly ? (volunteer.last_name || '') : family.parent_name?.split(' ').slice(1).join(' ') || '',
-      avatar: volunteer.avatar || 'ParkRanger-001',
+      volunteer_name: volunteer.name || family.parent_name,
+      first_name: volunteer.first_name || family.parent_name?.split(' ')[0] || '',
+      last_name: volunteer.last_name || family.parent_name?.split(' ').slice(1).join(' ') || '',
       pin: volunteer.pin || '',
-      streak: volunteer.streak || 0,
-      badges: volunteer.badges || 0,
       totalCheckins: volunteer.total_checkins || 0,
-      child_id: volunteer.id || null, // May be null for parent-volunteers
-      is_also_parent: !isVolunteerOnly // Flag to show they're also a parent
+      child_id: volunteer.id || null,
+      is_also_parent: isAlsoParent,
+      // Volunteer details
+      service_area: details.service_area || null,
+      serving_frequency: details.serving_frequency || null,
+      start_date: details.start_date || null,
+      address: details.address || null,
+      city: details.city || null,
+      state: details.state || null,
+      zip: details.zip || null,
+      dob: details.dob || null
     };
   });
   
@@ -1072,37 +1834,80 @@ app.delete('/api/rooms/:id', (req, res) => {
 // Get all templates
 app.get('/api/templates', (req, res) => {
   const templates = db.prepare('SELECT * FROM templates ORDER BY name').all();
-  // Parse room_ids JSON for each template
+  // Parse room_ids and label_settings JSON for each template
   const parsed = templates.map(t => ({
     ...t,
     room_ids: t.room_ids ? JSON.parse(t.room_ids) : [],
     checkout_enabled: Boolean(t.checkout_enabled),
     is_active: Boolean(t.is_active),
     track_streaks: t.track_streaks !== 0,
-    streak_reset_days: t.streak_reset_days || 7
+    streak_reset_days: t.streak_reset_days || 7,
+    print_volunteer_badges: t.print_volunteer_badges !== 0,
+    label_settings: t.label_settings ? JSON.parse(t.label_settings) : null
   }));
   res.json(parsed);
 });
 
-// Get active template
+// Get active template (auto-matches based on day/time or returns manually activated template)
 app.get('/api/templates/active', (req, res) => {
-  const template = db.prepare('SELECT * FROM templates WHERE is_active = 1').get();
+  const now = new Date();
+  const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+  
+  // First, check for a manually activated template
+  let template = db.prepare('SELECT * FROM templates WHERE is_active = 1').get();
+  
+  // If no manually activated template, try to auto-match based on day/time
+  if (!template) {
+    // Get all templates that match today's day of week
+    const todayTemplates = db.prepare(`
+      SELECT * FROM templates 
+      WHERE LOWER(day_of_week) = ? 
+      ORDER BY start_time ASC
+    `).all(currentDay);
+    
+    // Find a template that matches the current time window
+    for (const t of todayTemplates) {
+      if (t.start_time && t.end_time) {
+        // Check if current time is within the template's time window
+        if (currentTime >= t.start_time && currentTime <= t.end_time) {
+          template = t;
+          break;
+        }
+      } else if (t.start_time && !t.end_time) {
+        // If only start time is set, activate from that time until midnight
+        if (currentTime >= t.start_time) {
+          template = t;
+          break;
+        }
+      } else {
+        // No time set, just matches the day - use this template
+        template = t;
+        break;
+      }
+    }
+  }
+  
   if (!template) {
     return res.json(null);
   }
+  
   res.json({
     ...template,
     room_ids: template.room_ids ? JSON.parse(template.room_ids) : [],
     checkout_enabled: Boolean(template.checkout_enabled),
     is_active: true,
+    auto_matched: !template.is_active, // Flag to indicate if it was auto-matched
     track_streaks: template.track_streaks !== 0,
-    streak_reset_days: template.streak_reset_days || 7
+    streak_reset_days: template.streak_reset_days || 7,
+    print_volunteer_badges: template.print_volunteer_badges !== 0,
+    label_settings: template.label_settings ? JSON.parse(template.label_settings) : null
   });
 });
 
 // Create a new template
 app.post('/api/templates', (req, res) => {
-  const { name, day_of_week, start_time, end_time, checkout_enabled, room_ids, streak_reset_days, track_streaks } = req.body;
+  const { name, day_of_week, start_time, end_time, checkout_enabled, room_ids, streak_reset_days, track_streaks, print_volunteer_badges, label_settings } = req.body;
   
   if (!name) {
     return res.status(400).json({ error: 'Template name is required' });
@@ -1110,8 +1915,8 @@ app.post('/api/templates', (req, res) => {
   
   try {
     const result = db.prepare(`
-      INSERT INTO templates (name, day_of_week, start_time, end_time, checkout_enabled, room_ids, is_active, streak_reset_days, track_streaks)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO templates (name, day_of_week, start_time, end_time, checkout_enabled, room_ids, is_active, streak_reset_days, track_streaks, print_volunteer_badges, label_settings)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
     `).run(
       name,
       day_of_week || null,
@@ -1120,7 +1925,9 @@ app.post('/api/templates', (req, res) => {
       checkout_enabled ? 1 : 0,
       JSON.stringify(room_ids || []),
       streak_reset_days || 7,
-      track_streaks !== false ? 1 : 0
+      track_streaks !== false ? 1 : 0,
+      print_volunteer_badges !== false ? 1 : 0,
+      label_settings ? JSON.stringify(label_settings) : null
     );
     
     const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(result.lastInsertRowid);
@@ -1130,7 +1937,9 @@ app.post('/api/templates', (req, res) => {
       checkout_enabled: Boolean(template.checkout_enabled),
       is_active: Boolean(template.is_active),
       track_streaks: Boolean(template.track_streaks),
-      streak_reset_days: template.streak_reset_days || 7
+      streak_reset_days: template.streak_reset_days || 7,
+      print_volunteer_badges: template.print_volunteer_badges !== 0,
+      label_settings: template.label_settings ? JSON.parse(template.label_settings) : null
     });
   } catch (err) {
     console.error('Error creating template:', err);
@@ -1141,7 +1950,7 @@ app.post('/api/templates', (req, res) => {
 // Update a template
 app.put('/api/templates/:id', (req, res) => {
   const { id } = req.params;
-  const { name, day_of_week, start_time, end_time, checkout_enabled, room_ids, streak_reset_days, track_streaks } = req.body;
+  const { name, day_of_week, start_time, end_time, checkout_enabled, room_ids, streak_reset_days, track_streaks, print_volunteer_badges, label_settings } = req.body;
   
   if (!name) {
     return res.status(400).json({ error: 'Template name is required' });
@@ -1150,7 +1959,7 @@ app.put('/api/templates/:id', (req, res) => {
   try {
     db.prepare(`
       UPDATE templates 
-      SET name = ?, day_of_week = ?, start_time = ?, end_time = ?, checkout_enabled = ?, room_ids = ?, streak_reset_days = ?, track_streaks = ?
+      SET name = ?, day_of_week = ?, start_time = ?, end_time = ?, checkout_enabled = ?, room_ids = ?, streak_reset_days = ?, track_streaks = ?, print_volunteer_badges = ?, label_settings = ?
       WHERE id = ?
     `).run(
       name,
@@ -1161,6 +1970,8 @@ app.put('/api/templates/:id', (req, res) => {
       JSON.stringify(room_ids || []),
       streak_reset_days || 7,
       track_streaks !== false ? 1 : 0,
+      print_volunteer_badges !== false ? 1 : 0,
+      label_settings ? JSON.stringify(label_settings) : null,
       id
     );
     
@@ -1172,11 +1983,118 @@ app.put('/api/templates/:id', (req, res) => {
       ...template,
       room_ids: template.room_ids ? JSON.parse(template.room_ids) : [],
       checkout_enabled: Boolean(template.checkout_enabled),
-      is_active: Boolean(template.is_active)
+      is_active: Boolean(template.is_active),
+      track_streaks: Boolean(template.track_streaks),
+      streak_reset_days: template.streak_reset_days || 7,
+      print_volunteer_badges: template.print_volunteer_badges !== 0,
+      label_settings: template.label_settings ? JSON.parse(template.label_settings) : null
     });
   } catch (err) {
     console.error('Error updating template:', err);
     res.status(500).json({ error: 'Failed to update template' });
+  }
+});
+
+// Get default label settings structure
+app.get('/api/label-settings/defaults', (req, res) => {
+  const defaults = {
+    // Kid Check-in Label
+    kidLabel: {
+      enabled: true,
+      showAvatar: true,
+      showName: true,
+      showRoom: true,
+      showStreak: true,
+      showBadges: true,
+      showRank: true,
+      showPickupCode: true,
+      showAllergies: true,
+      showDate: true,
+      nameSize: 110,
+      roomSize: 44,
+      accentColor: '#10B981', // emerald
+      borderStyle: 'pointed', // pointed, rounded, none
+    },
+    // Parent Receipt Label
+    parentLabel: {
+      enabled: true,
+      showLogo: false,
+      showFamilyName: true,
+      showChildren: true,
+      showPickupCodes: true,
+      showRooms: true,
+      showDate: true,
+      showTime: true,
+      titleSize: 48,
+      nameSize: 36,
+      accentColor: '#3B82F6', // blue
+    },
+    // Volunteer Badge Label
+    volunteerLabel: {
+      enabled: true,
+      showInitials: true,
+      showName: true,
+      showServiceArea: true,
+      showDate: true,
+      nameSize: 154,
+      serviceAreaSize: 62,
+      dateSize: 50,
+      accentColor: '#4F46E5', // indigo
+    }
+  };
+  res.json(defaults);
+});
+
+// Generate label preview image
+app.post('/api/label-preview', async (req, res) => {
+  const { labelType, settings, sampleData } = req.body;
+  
+  try {
+    let imageBuffer;
+    
+    if (labelType === 'kid') {
+      imageBuffer = await generateLabelImage({
+        childName: sampleData?.name || 'Sample Child',
+        avatar: 'explorer',
+        pickupCode: 'ABC1',
+        room: sampleData?.room || 'Kids Room',
+        streak: 5,
+        rank: 1,
+        badges: 3,
+        tier: 'bronze',
+        allergies: sampleData?.allergies || '',
+        ...settings
+      });
+    } else if (labelType === 'parent') {
+      imageBuffer = await generateParentLabelImage({
+        familyName: sampleData?.familyName || 'Sample Family',
+        children: sampleData?.children || [
+          { name: 'Child One', pickupCode: 'ABC1', room: 'Room 1' },
+          { name: 'Child Two', pickupCode: 'DEF2', room: 'Room 2' }
+        ],
+        ...settings
+      });
+    } else if (labelType === 'volunteer') {
+      imageBuffer = await generateVolunteerBadgeImage({
+        volunteerName: sampleData?.name || 'Sample Volunteer',
+        serviceArea: sampleData?.serviceArea || 'Kids Ministry',
+        date: new Date().toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          month: 'long', 
+          day: 'numeric',
+          year: 'numeric'
+        }),
+        ...settings
+      });
+    } else {
+      return res.status(400).json({ error: 'Invalid label type' });
+    }
+    
+    res.set('Content-Type', 'image/png');
+    res.send(imageBuffer);
+  } catch (err) {
+    console.error('Error generating label preview:', err);
+    res.status(500).json({ error: 'Failed to generate preview' });
   }
 });
 
@@ -1275,14 +2193,215 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+// Reports API - Custom query endpoint for report builder
+app.post('/api/reports/query', (req, res) => {
+  const { reportType, filters = {}, columns = [] } = req.body;
+  
+  try {
+    let query = '';
+    let params = [];
+    
+    switch (reportType) {
+      case 'families':
+        query = `
+          SELECT 
+            f.id,
+            f.name as family_name,
+            f.phone,
+            f.email,
+            f.parent_name,
+            f.address,
+            f.created_at,
+            COUNT(DISTINCT c.id) as child_count,
+            SUM(c.total_checkins) as total_checkins
+          FROM families f
+          LEFT JOIN children c ON f.id = c.family_id
+          GROUP BY f.id
+          ORDER BY f.name
+        `;
+        break;
+        
+      case 'children':
+        query = `
+          SELECT 
+            c.id,
+            c.first_name,
+            c.last_name,
+            c.name,
+            c.age,
+            c.birthday,
+            c.gender,
+            c.allergies,
+            c.notes,
+            c.streak,
+            c.total_checkins,
+            c.badges,
+            f.name as family_name,
+            f.phone as family_phone,
+            f.email as family_email
+          FROM children c
+          JOIN families f ON c.family_id = f.id
+          ORDER BY c.last_name, c.first_name
+        `;
+        break;
+        
+      case 'checkins':
+        const startDate = filters.startDate || '2020-01-01';
+        const endDate = filters.endDate || '2099-12-31';
+        query = `
+          SELECT 
+            ch.id,
+            ch.checked_in_at,
+            ch.checked_out_at,
+            ch.room,
+            ch.pickup_code,
+            c.first_name,
+            c.last_name,
+            c.age,
+            f.name as family_name,
+            f.phone as family_phone,
+            t.name as template_name
+          FROM checkins ch
+          JOIN children c ON ch.child_id = c.id
+          JOIN families f ON ch.family_id = f.id
+          LEFT JOIN templates t ON ch.template_id = t.id
+          WHERE DATE(ch.checked_in_at) >= ? AND DATE(ch.checked_in_at) <= ?
+          ORDER BY ch.checked_in_at DESC
+        `;
+        params = [startDate, endDate];
+        break;
+        
+      case 'attendance_summary':
+        query = `
+          SELECT 
+            DATE(checked_in_at) as date,
+            COUNT(*) as total_checkins,
+            COUNT(DISTINCT child_id) as unique_children,
+            COUNT(DISTINCT family_id) as unique_families
+          FROM checkins
+          GROUP BY DATE(checked_in_at)
+          ORDER BY date DESC
+        `;
+        break;
+        
+      case 'rewards':
+        query = `
+          SELECT 
+            er.id,
+            er.earned_at,
+            er.prize_claimed,
+            r.name as reward_name,
+            r.description,
+            r.prize,
+            r.icon,
+            c.first_name,
+            c.last_name,
+            f.name as family_name
+          FROM earned_rewards er
+          JOIN rewards r ON er.reward_id = r.id
+          JOIN children c ON er.child_id = c.id
+          JOIN families f ON c.family_id = f.id
+          ORDER BY er.earned_at DESC
+        `;
+        break;
+        
+      case 'volunteers':
+        query = `
+          SELECT 
+            c.id,
+            c.first_name,
+            c.last_name,
+            c.total_checkins,
+            f.phone,
+            f.email,
+            f.created_at
+          FROM children c
+          JOIN families f ON c.family_id = f.id
+          WHERE c.notes LIKE '%Volunteer%' OR f.name LIKE '%(Volunteer)%'
+          ORDER BY c.last_name, c.first_name
+        `;
+        break;
+        
+      case 'birthdays':
+        const month = filters.month || (new Date().getMonth() + 1);
+        query = `
+          SELECT 
+            c.id,
+            c.first_name,
+            c.last_name,
+            c.birthday,
+            c.age,
+            f.name as family_name,
+            f.phone,
+            f.email
+          FROM children c
+          JOIN families f ON c.family_id = f.id
+          WHERE CAST(strftime('%m', c.birthday) AS INTEGER) = ?
+          ORDER BY CAST(strftime('%d', c.birthday) AS INTEGER)
+        `;
+        params = [month];
+        break;
+        
+      case 'allergies':
+        query = `
+          SELECT 
+            c.id,
+            c.first_name,
+            c.last_name,
+            c.allergies,
+            c.notes,
+            f.name as family_name,
+            f.phone
+          FROM children c
+          JOIN families f ON c.family_id = f.id
+          WHERE c.allergies IS NOT NULL AND c.allergies != '' AND c.allergies != 'None'
+          ORDER BY c.last_name, c.first_name
+        `;
+        break;
+        
+      default:
+        return res.status(400).json({ error: 'Invalid report type' });
+    }
+    
+    const results = db.prepare(query).all(...params);
+    res.json({ data: results, count: results.length });
+  } catch (err) {
+    console.error('Report query error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get available report fields for custom queries
+app.get('/api/reports/schema', (req, res) => {
+  res.json({
+    tables: {
+      families: ['id', 'name', 'phone', 'email', 'parent_name', 'address', 'created_at'],
+      children: ['id', 'family_id', 'first_name', 'last_name', 'name', 'age', 'birthday', 'gender', 'pin', 'avatar', 'streak', 'badges', 'total_checkins', 'allergies', 'notes'],
+      checkins: ['id', 'child_id', 'family_id', 'template_id', 'room', 'pickup_code', 'checked_in_at', 'checked_out_at'],
+      rewards: ['id', 'name', 'description', 'type', 'trigger_type', 'trigger_value', 'prize', 'icon', 'enabled'],
+      earned_rewards: ['id', 'child_id', 'reward_id', 'earned_at', 'prize_claimed']
+    },
+    savedReports: [
+      { id: 'families', name: 'All Families', description: 'Complete list of registered families with contact info' },
+      { id: 'children', name: 'All Children', description: 'Complete list of children with family info' },
+      { id: 'checkins', name: 'Check-in History', description: 'Detailed check-in records with date filters' },
+      { id: 'attendance_summary', name: 'Attendance Summary', description: 'Daily attendance totals' },
+      { id: 'rewards', name: 'Earned Rewards', description: 'All rewards earned by children' },
+      { id: 'volunteers', name: 'Volunteers', description: 'List of all volunteers' },
+      { id: 'birthdays', name: 'Birthdays by Month', description: 'Children with birthdays in selected month' },
+      { id: 'allergies', name: 'Allergy Report', description: 'Children with allergies or special notes' }
+    ]
+  });
+});
+
 // Update family
 app.put('/api/family/:id', (req, res) => {
-  const { name, phone, email, parentName } = req.body;
+  const { name, phone, email, parentName, address } = req.body;
   const cleanPhone = phone.replace(/\D/g, '');
   
   try {
-    db.prepare('UPDATE families SET name = ?, phone = ?, email = ?, parent_name = ? WHERE id = ?')
-      .run(name, cleanPhone, email, parentName, req.params.id);
+    db.prepare('UPDATE families SET name = ?, phone = ?, email = ?, parent_name = ?, address = ? WHERE id = ?')
+      .run(name, cleanPhone, email, parentName, address || '', req.params.id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1742,8 +2861,11 @@ function checkAndAwardRewards(childId) {
 // LABEL PRINTING (existing code)
 // ============================================
 
-const LABEL_WIDTH = 1200;
-const LABEL_HEIGHT = 694;
+// Dymo 30256 Shipping Labels: 2.31" x 4" (59mm x 102mm)
+// At 300 DPI: 693 x 1200 pixels (height x width)
+// Label orientation: landscape (4" wide, 2.31" tall)
+const LABEL_WIDTH = 1200;  // 4 inches at 300 DPI
+const LABEL_HEIGHT = 693;  // 2.31 inches at 300 DPI
 
 async function generateLabelImage(data) {
   const { 
@@ -1756,7 +2878,22 @@ async function generateLabelImage(data) {
     badges,
     isNewBadge,
     badgeName,
-    tier
+    tier,
+    allergies,
+    // Settings from label editor (with defaults)
+    showAvatar = true,
+    showName = true,
+    showRoom = true,
+    showStreak = true,
+    showBadges = true,
+    showRank = true,
+    showPickupCode = true,
+    showAllergies = true,
+    showDate = true,
+    nameSize = 110,
+    roomSize = 44,
+    accentColor = '#10B981',
+    borderStyle = 'pointed'
   } = data;
 
   const canvas = createCanvas(LABEL_WIDTH, LABEL_HEIGHT);
@@ -1766,19 +2903,27 @@ async function generateLabelImage(data) {
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
 
-  // Border based on tier
+  // Border based on style setting or tier
   const borderWidth = 12;
   ctx.strokeStyle = '#000000';
   ctx.lineWidth = borderWidth;
   
-  if (tier === 'gold') {
+  if (borderStyle === 'none') {
+    // No border
+  } else if (tier === 'gold' || borderStyle === 'pointed') {
     ctx.strokeRect(borderWidth/2, borderWidth/2, LABEL_WIDTH - borderWidth, LABEL_HEIGHT - borderWidth);
-    ctx.lineWidth = 3;
-    ctx.strokeRect(borderWidth + 6, borderWidth + 6, LABEL_WIDTH - (borderWidth*2) - 12, LABEL_HEIGHT - (borderWidth*2) - 12);
+    if (tier === 'gold') {
+      ctx.lineWidth = 3;
+      ctx.strokeRect(borderWidth + 6, borderWidth + 6, LABEL_WIDTH - (borderWidth*2) - 12, LABEL_HEIGHT - (borderWidth*2) - 12);
+    }
   } else if (tier === 'silver') {
     ctx.setLineDash([16, 8]);
     ctx.strokeRect(borderWidth/2, borderWidth/2, LABEL_WIDTH - borderWidth, LABEL_HEIGHT - borderWidth);
     ctx.setLineDash([]);
+  } else if (borderStyle === 'rounded') {
+    ctx.beginPath();
+    ctx.roundRect(borderWidth/2, borderWidth/2, LABEL_WIDTH - borderWidth, LABEL_HEIGHT - borderWidth, 20);
+    ctx.stroke();
   } else {
     ctx.strokeRect(borderWidth/2, borderWidth/2, LABEL_WIDTH - borderWidth, LABEL_HEIGHT - borderWidth);
   }
@@ -1791,49 +2936,49 @@ async function generateLabelImage(data) {
   const avatarX = 45;
   const avatarY = (LABEL_HEIGHT - avatarSize) / 2;
   
-  // Load Park Ranger avatar image
-  const avatarSeed = avatar || childName;
-  console.log(`🖼️ Loading avatar for label: "${avatarSeed}" (original avatar: "${avatar}")`);
-  const avatarImage = await fetchAvatarImage(avatarSeed);
-  console.log(`🖼️ Avatar loaded: ${avatarImage ? 'SUCCESS' : 'FAILED'}`);
-  
-  if (avatarImage) {
-    // Draw avatar with rounded corners (no background - SVG has its own)
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(avatarX, avatarY, avatarSize, avatarSize, 28);
-    ctx.clip();
-    ctx.drawImage(avatarImage, avatarX, avatarY, avatarSize, avatarSize);
-    ctx.restore();
+  if (showAvatar) {
+    // Load Park Ranger avatar image
+    const avatarSeed = avatar || childName;
+    const avatarImage = await fetchAvatarImage(avatarSeed);
     
-    // Border around avatar
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.roundRect(avatarX, avatarY, avatarSize, avatarSize, 28);
-    ctx.stroke();
-  } else {
-    // Fallback: draw initials with light gray background
-    ctx.fillStyle = '#e5e5e5';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.roundRect(avatarX, avatarY, avatarSize, avatarSize, 28);
-    ctx.fill();
-    ctx.stroke();
-  
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 120px Arial';
-  ctx.textAlign = 'center';
-    ctx.fillText(childName.substring(0, 2).toUpperCase(), avatarX + avatarSize/2, avatarY + avatarSize/2 + 40);
+    if (avatarImage) {
+      // Draw avatar with rounded corners (no background - SVG has its own)
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(avatarX, avatarY, avatarSize, avatarSize, 28);
+      ctx.clip();
+      ctx.drawImage(avatarImage, avatarX, avatarY, avatarSize, avatarSize);
+      ctx.restore();
+      
+      // Border around avatar
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.roundRect(avatarX, avatarY, avatarSize, avatarSize, 28);
+      ctx.stroke();
+    } else {
+      // Fallback: draw initials with light gray background
+      ctx.fillStyle = '#e5e5e5';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.roundRect(avatarX, avatarY, avatarSize, avatarSize, 28);
+      ctx.fill();
+      ctx.stroke();
+    
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 120px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(childName.substring(0, 2).toUpperCase(), avatarX + avatarSize/2, avatarY + avatarSize/2 + 40);
+    }
   }
 
   // ============================================
   // CENTER: Name, Room, and Stats
   // ============================================
   
-  const contentX = avatarX + avatarSize + 35;
-  const contentWidth = 680;
+  const contentX = showAvatar ? avatarX + avatarSize + 35 : 45;
+  const contentWidth = showPickupCode ? 580 : LABEL_WIDTH - contentX - 40;
   
   // Tier badge (if applicable)
   if (tier) {
@@ -1844,38 +2989,44 @@ async function generateLabelImage(data) {
   }
 
   // Child name - BIG
-  ctx.fillStyle = '#000000';
-  ctx.textAlign = 'left';
-  ctx.font = 'bold 110px Arial';
-  
-  // Shrink font if name is too long
-  let nameWidth = ctx.measureText(childName).width;
-  if (nameWidth > contentWidth) {
-    ctx.font = 'bold 85px Arial';
-    nameWidth = ctx.measureText(childName).width;
-    if (nameWidth > contentWidth) {
-      ctx.font = 'bold 65px Arial';
+  if (showName) {
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'left';
+    
+    // Use nameSize setting, with auto-shrink if too long
+    let currentSize = Math.min(nameSize, 150); // Cap at 150
+    ctx.font = `bold ${currentSize}px Arial`;
+    
+    // Shrink font if name is too long
+    let nameWidth = ctx.measureText(childName).width;
+    while (nameWidth > contentWidth && currentSize > 40) {
+      currentSize -= 10;
+      ctx.font = `bold ${currentSize}px Arial`;
+      nameWidth = ctx.measureText(childName).width;
     }
+    ctx.fillText(childName, contentX, tier ? 145 : 120);
   }
-  ctx.fillText(childName, contentX, tier ? 145 : 120);
 
   // Room - larger
-  ctx.font = 'bold 44px Arial';
-  ctx.fillText(room || 'Room 101', contentX, tier ? 205 : 180);
+  if (showRoom) {
+    const roomFontSize = Math.min(roomSize, 80); // Cap at 80
+    ctx.font = `bold ${roomFontSize}px Arial`;
+    ctx.fillText(room || 'Room 101', contentX, tier ? 205 : 180);
+  }
   
   // Stats row - larger and properly spaced
   const statsY = tier ? 310 : 290;
   
   // Calculate stat positions with proper spacing
   const statItems = [];
-  if (streak > 0) statItems.push({ value: `${streak}`, label: 'STREAK' });
-  statItems.push({ value: `${badges || 0}`, label: 'BADGES' });
-  statItems.push({ value: `#${rank || 1}`, label: 'RANK' });
+  if (showStreak && streak > 0) statItems.push({ value: `${streak}`, label: 'STREAK' });
+  if (showBadges) statItems.push({ value: `${badges || 0}`, label: 'BADGES' });
+  if (showRank) statItems.push({ value: `#${rank || 1}`, label: 'RANK' });
   
   const statWidth = 150;
   statItems.forEach((stat, i) => {
     const statX = contentX + (i * statWidth);
-  ctx.font = 'bold 64px Arial';
+    ctx.font = 'bold 64px Arial';
     ctx.fillText(stat.value, statX, statsY);
     ctx.font = 'bold 22px Arial';
     ctx.fillText(stat.label, statX, statsY + 30);
@@ -1900,48 +3051,66 @@ async function generateLabelImage(data) {
   // RIGHT SIDE: Pickup Code (compact tear-off)
   // ============================================
   
-  // Dashed separator line
-  const separatorX = 1040;
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([10, 6]);
-  ctx.beginPath();
-  ctx.moveTo(separatorX, 25);
-  ctx.lineTo(separatorX, LABEL_HEIGHT - 25);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  if (showPickupCode) {
+    // Dashed separator line
+    const separatorX = 1040;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 6]);
+    ctx.beginPath();
+    ctx.moveTo(separatorX, 25);
+    ctx.lineTo(separatorX, LABEL_HEIGHT - 25);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-  // Scissors icon
-  ctx.font = '24px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('✂', separatorX, LABEL_HEIGHT / 2 + 8);
-  
-  // Pickup code - centered in remaining space
-  const codeX = separatorX + (LABEL_WIDTH - separatorX) / 2;
-  
-  ctx.fillStyle = '#000000';
-  ctx.font = 'bold 22px Arial';
-  ctx.fillText('PICKUP', codeX, 120);
-  ctx.fillText('CODE', codeX, 148);
-  
-  // The code itself
-  ctx.font = 'bold 52px monospace';
-  ctx.fillText(pickupCode, codeX, 240);
+    // Scissors icon
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('✂', separatorX, LABEL_HEIGHT / 2 + 8);
+    
+    // Pickup code - centered in remaining space
+    const codeX = separatorX + (LABEL_WIDTH - separatorX) / 2;
+    
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText('PICKUP', codeX, 120);
+    ctx.fillText('CODE', codeX, 148);
+    
+    // The code itself
+    ctx.font = 'bold 52px monospace';
+    ctx.fillText(pickupCode, codeX, 240);
+  }
 
   // ============================================
   // FOOTER
   // ============================================
 
-  ctx.font = '20px Arial';
-  ctx.fillStyle = '#666666';
-  ctx.textAlign = 'center';
-  ctx.fillText('ADVENTURE KIDS CHECK-IN', LABEL_WIDTH / 2, LABEL_HEIGHT - 25);
+  if (showDate) {
+    ctx.font = '20px Arial';
+    ctx.fillStyle = '#666666';
+    ctx.textAlign = 'center';
+    ctx.fillText('ADVENTURE KIDS CHECK-IN', LABEL_WIDTH / 2, LABEL_HEIGHT - 25);
+  }
 
   return canvas.toBuffer('image/png');
 }
 
 function generateParentLabelImage(data) {
-  const { familyName, children } = data;
+  const { 
+    familyName, 
+    children,
+    // Settings from label editor (with defaults)
+    showLogo = false,
+    showFamilyName = true,
+    showChildren = true,
+    showPickupCodes = true,
+    showRooms = true,
+    showDate = true,
+    showTime = true,
+    titleSize = 48,
+    nameSize = 36,
+    accentColor = '#3B82F6'
+  } = data;
 
   const canvas = createCanvas(LABEL_WIDTH, LABEL_HEIGHT);
   const ctx = canvas.getContext('2d');
@@ -1953,8 +3122,10 @@ function generateParentLabelImage(data) {
   ctx.lineWidth = 8;
   ctx.strokeRect(4, 4, LABEL_WIDTH - 8, LABEL_HEIGHT - 8);
 
+  // Title
   ctx.fillStyle = '#000000';
-  ctx.font = 'bold 48px Arial';
+  const cappedTitleSize = Math.min(titleSize, 72); // Cap at 72
+  ctx.font = `bold ${cappedTitleSize}px Arial`;
   ctx.textAlign = 'center';
   ctx.fillText('PARENT PICKUP RECEIPT', LABEL_WIDTH / 2, 60);
 
@@ -1965,29 +3136,60 @@ function generateParentLabelImage(data) {
   ctx.lineTo(LABEL_WIDTH - 50, 80);
   ctx.stroke();
 
-  ctx.textAlign = 'left';
-  let yPos = 140;
+  // Family name (if enabled)
+  let yPos = 130;
+  if (showFamilyName && familyName) {
+    ctx.font = `bold ${Math.min(nameSize + 10, 50)}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${familyName} Family`, LABEL_WIDTH / 2, yPos);
+    yPos += 50;
+  }
 
-  children.forEach((child, index) => {
-    const xPos = 60 + (index % 3) * 380;
-    const yOffset = Math.floor(index / 3) * 200;
+  // Children list
+  if (showChildren && children && children.length > 0) {
+    ctx.textAlign = 'left';
     
-    ctx.font = 'bold 42px Arial';
-    ctx.fillText(child.name, xPos, yPos + yOffset);
-    
-    ctx.font = '28px Arial';
-    ctx.fillText(child.room || 'Room 101', xPos, yPos + 40 + yOffset);
-    
-    ctx.font = '24px Arial';
-    ctx.fillText('CODE:', xPos, yPos + 85 + yOffset);
-    
-    ctx.font = 'bold 64px monospace';
-    ctx.fillText(child.pickupCode, xPos, yPos + 150 + yOffset);
-  });
+    children.forEach((child, index) => {
+      const xPos = 60 + (index % 3) * 380;
+      const yOffset = Math.floor(index / 3) * 180;
+      
+      // Child name
+      const cappedNameSize = Math.min(nameSize, 60); // Cap at 60
+      ctx.font = `bold ${cappedNameSize}px Arial`;
+      ctx.fillText(child.name, xPos, yPos + yOffset);
+      
+      // Room
+      if (showRooms) {
+        ctx.font = `${Math.max(cappedNameSize - 14, 20)}px Arial`;
+        ctx.fillText(child.room || 'Room 101', xPos, yPos + 35 + yOffset);
+      }
+      
+      // Pickup code
+      if (showPickupCodes) {
+        ctx.font = '22px Arial';
+        ctx.fillText('CODE:', xPos, yPos + 75 + yOffset);
+        
+        ctx.font = 'bold 56px monospace';
+        ctx.fillText(child.pickupCode, xPos, yPos + 130 + yOffset);
+      }
+    });
+  }
 
-  ctx.font = '24px Arial';
+  // Footer with date/time
   ctx.textAlign = 'center';
-  ctx.fillText('Present this receipt at pickup • ADVENTURE KIDS CHECK-IN', LABEL_WIDTH / 2, LABEL_HEIGHT - 30);
+  let footerText = 'Present this receipt at pickup';
+  if (showDate || showTime) {
+    const now = new Date();
+    if (showDate && showTime) {
+      footerText += ` • ${now.toLocaleDateString()} ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+    } else if (showDate) {
+      footerText += ` • ${now.toLocaleDateString()}`;
+    } else if (showTime) {
+      footerText += ` • ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+    }
+  }
+  ctx.font = '22px Arial';
+  ctx.fillText(footerText, LABEL_WIDTH / 2, LABEL_HEIGHT - 30);
 
   return canvas.toBuffer('image/png');
 }
@@ -2062,6 +3264,225 @@ app.post('/print-parent', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Print volunteer badge
+app.post('/print-volunteer', async (req, res) => {
+  const labelData = req.body;
+  
+  try {
+    const imageBuffer = await generateVolunteerBadgeImage(labelData);
+    const tempPath = path.join(__dirname, 'temp-volunteer-label.png');
+    
+    fs.writeFileSync(tempPath, imageBuffer);
+    console.log('Volunteer badge generated:', tempPath);
+    
+    // Skip actual printing if disabled (remote deployment)
+    if (DISABLE_PRINTING) {
+      console.log('Printing disabled - volunteer badge saved but not printed');
+      return res.json({ success: true, message: 'Volunteer badge generated (printing disabled on server)', printDisabled: true });
+    }
+    
+    const printerName = 'DYMO_LabelWriter_450_Turbo';
+    
+    const printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    
+    exec(printCmd, (err, stdout, stderr) => {
+      if (err) {
+        console.error('Print error:', err);
+        return res.status(500).json({ error: 'Failed to print', details: stderr });
+      }
+      
+      console.log('Volunteer badge printed:', stdout);
+      res.json({ success: true, message: 'Volunteer badge printed!' });
+    });
+  } catch (err) {
+    console.error('Error generating volunteer badge:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate volunteer badge label
+async function generateVolunteerBadgeImage(data) {
+  const { 
+    volunteerName, 
+    serviceArea, 
+    date, 
+    photoPath,
+    // Settings from label editor (with defaults)
+    showInitials = true,
+    showName = true,
+    showServiceArea = true,
+    showDate = true,
+    nameSize = 154,
+    serviceAreaSize = 62,
+    dateSize = 50,
+    accentColor = '#4F46E5'
+  } = data;
+
+  const canvas = createCanvas(LABEL_WIDTH, LABEL_HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  // White background
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
+
+  // ============================================
+  // LEFT SIDE: Logo/Photo (same size as kid avatar)
+  // ============================================
+  
+  const logoSize = 320;
+  const logoX = 45;
+  const logoY = (LABEL_HEIGHT - logoSize) / 2;
+
+  if (showInitials) {
+    // Try to load volunteer photo or fall back to Adventure Kids logo
+    let imageLoaded = false;
+    try {
+      let imagePath;
+      if (photoPath && fs.existsSync(photoPath)) {
+        imagePath = photoPath;
+      } else {
+        // Use Adventure Kids logo from public folder
+        imagePath = path.join(publicPath, 'adventure-kids-logo.png');
+        if (!fs.existsSync(imagePath)) {
+          // Fall back to explorer avatar if logo doesn't exist
+          imagePath = path.join(publicPath, 'avatars', 'explorer.png');
+        }
+      }
+      
+      if (fs.existsSync(imagePath)) {
+        const img = await loadImage(imagePath);
+        
+        // Draw with rounded corners like kid avatar
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(logoX, logoY, logoSize, logoSize, 28);
+        ctx.clip();
+        ctx.drawImage(img, logoX, logoY, logoSize, logoSize);
+        ctx.restore();
+        
+        // Border around logo
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.roundRect(logoX, logoY, logoSize, logoSize, 28);
+        ctx.stroke();
+        
+        imageLoaded = true;
+      }
+    } catch (imgErr) {
+      console.log('❌ Could not load volunteer photo:', imgErr.message);
+    }
+
+    // Draw initials placeholder if no image loaded
+    if (!imageLoaded) {
+      ctx.fillStyle = '#E5E7EB';
+      ctx.beginPath();
+      ctx.roundRect(logoX, logoY, logoSize, logoSize, 28);
+      ctx.fill();
+      
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.roundRect(logoX, logoY, logoSize, logoSize, 28);
+      ctx.stroke();
+      
+      // Get first and last name initials
+      const nameParts = volunteerName.trim().split(' ');
+      const firstInitial = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() : '';
+      const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1].charAt(0).toUpperCase() : '';
+      const initials = firstInitial + lastInitial;
+      
+      ctx.fillStyle = accentColor;
+      ctx.font = 'bold 140px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(initials, logoX + logoSize/2, logoY + logoSize/2 + 50);
+    }
+  }
+
+  // ============================================
+  // RIGHT SIDE: Name, Service Area, Date
+  // ============================================
+  
+  const contentX = showInitials ? logoX + logoSize + 35 : 45;
+  const contentWidth = LABEL_WIDTH - contentX - 40;
+  
+  // Shift everything down by ~25px (quarter inch at ~100dpi)
+  const yOffset = 25;
+
+  // "VOLUNTEER" label at top
+  ctx.fillStyle = accentColor;
+  ctx.font = 'bold 50px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('VOLUNTEER', contentX, 85 + yOffset);
+
+  // Volunteer name - BIG (cap at 200px max, auto-shrink if too wide)
+  if (showName) {
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'left';
+    
+    // Cap the name size at reasonable bounds
+    let currentSize = Math.min(Math.max(nameSize, 60), 200);
+    ctx.font = `bold ${currentSize}px Arial`;
+    
+    // Shrink font if name is too long for available width
+    let nameWidth = ctx.measureText(volunteerName).width;
+    while (nameWidth > contentWidth && currentSize > 50) {
+      currentSize -= 8;
+      ctx.font = `bold ${currentSize}px Arial`;
+      nameWidth = ctx.measureText(volunteerName).width;
+    }
+    ctx.fillText(volunteerName, contentX, 200 + yOffset);
+  }
+
+  // Service area (cap at 100px)
+  if (showServiceArea && serviceArea) {
+    ctx.fillStyle = '#000000';
+    const cappedServiceSize = Math.min(Math.max(serviceAreaSize, 24), 100);
+    ctx.font = `bold ${cappedServiceSize}px Arial`;
+    
+    // Also shrink if too wide
+    let areaWidth = ctx.measureText(serviceArea).width;
+    let areaSize = cappedServiceSize;
+    while (areaWidth > contentWidth && areaSize > 24) {
+      areaSize -= 4;
+      ctx.font = `bold ${areaSize}px Arial`;
+      areaWidth = ctx.measureText(serviceArea).width;
+    }
+    ctx.fillText(serviceArea, contentX, 280 + yOffset);
+  }
+
+  // Date (cap at 72px to prevent overflow)
+  if (showDate) {
+    const displayDate = date || new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      month: 'long', 
+      day: 'numeric',
+      year: 'numeric'
+    });
+    ctx.fillStyle = '#666666';
+    const cappedDateSize = Math.min(Math.max(dateSize, 20), 72);
+    ctx.font = `bold ${cappedDateSize}px Arial`;
+    
+    // Shrink if too wide
+    let dateWidth = ctx.measureText(displayDate).width;
+    let dateSz = cappedDateSize;
+    while (dateWidth > contentWidth && dateSz > 20) {
+      dateSz -= 4;
+      ctx.font = `bold ${dateSz}px Arial`;
+      dateWidth = ctx.measureText(displayDate).width;
+    }
+    ctx.fillText(displayDate, contentX, 360 + yOffset);
+  }
+
+  // ============================================
+  // LEFT ACCENT BAR (like volunteer branding)
+  // ============================================
+  ctx.fillStyle = accentColor;
+  ctx.fillRect(0, 0, 15, LABEL_HEIGHT);
+
+  return canvas.toBuffer('image/png');
+}
 
 // Print reward certificate
 app.post('/print-reward', async (req, res) => {
@@ -2239,7 +3660,10 @@ app.get('/printers', (req, res) => {
 // STATIC FILE SERVING (Production)
 // ============================================
 // Serve the built frontend in production
-const distPath = path.join(__dirname, 'dist');
+// Use environment variable for dist path (for Electron) or default
+const distPath = process.env.DIST_PATH || path.join(__dirname, 'dist');
+console.log('📁 Dist path:', distPath);
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   
@@ -2252,6 +3676,8 @@ if (fs.existsSync(distPath)) {
   });
   
   console.log('📦 Serving static files from dist/');
+} else {
+  console.log('⚠️ Dist path not found:', distPath);
 }
 
 // ============================================
