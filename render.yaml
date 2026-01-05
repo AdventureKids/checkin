@@ -3,7 +3,7 @@ services:
   - type: web
     name: churchcheck-api
     runtime: node
-    buildCommand: npm install
+    buildCommand: npm install && npm rebuild better-sqlite3 canvas
     startCommand: npm start
     envVars:
       - key: NODE_ENV
