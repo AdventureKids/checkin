@@ -367,6 +367,22 @@ try {
     )
   `);
   console.log('✅ Created custom_field_values table');
+  
+  // Add is_volunteer column to families if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE families ADD COLUMN is_volunteer INTEGER DEFAULT 0`);
+    console.log('✅ Added is_volunteer column to families');
+  } catch (e) {
+    // Column already exists
+  }
+  
+  // Add address column to families if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE families ADD COLUMN address TEXT`);
+    console.log('✅ Added address column to families');
+  } catch (e) {
+    // Column already exists
+  }
 } catch (err) {
   console.log('Migration note:', err.message);
 }
@@ -1709,13 +1725,14 @@ app.get('/api/families', (req, res) => {
 
 // Get all volunteers
 app.get('/api/volunteers', (req, res) => {
-  // Get all families marked as volunteers (includes both volunteer-only and parent-volunteers)
-  const volunteerFamilies = db.prepare(`
-    SELECT f.*
-    FROM families f 
-    WHERE f.is_volunteer = 1
-    ORDER BY f.name
-  `).all();
+  try {
+    // Get all families marked as volunteers (includes both volunteer-only and parent-volunteers)
+    const volunteerFamilies = db.prepare(`
+      SELECT f.*
+      FROM families f 
+      WHERE f.is_volunteer = 1
+      ORDER BY f.name
+    `).all();
   
   const result = volunteerFamilies.map(family => {
     const children = db.prepare('SELECT * FROM children WHERE family_id = ?').all(family.id);
@@ -1765,6 +1782,10 @@ app.get('/api/volunteers', (req, res) => {
   });
   
   res.json(result);
+  } catch (err) {
+    console.error('Error fetching volunteers:', err);
+    res.json([]); // Return empty array on error
+  }
 });
 
 // Get available avatars - now just returns the single explorer avatar
