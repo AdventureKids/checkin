@@ -18,6 +18,7 @@ const DISABLE_PRINTING = process.env.DISABLE_PRINTING === 'true'; // Disable pri
 // AVATAR SYSTEM - Single explorer character
 // ============================================
 const PUBLIC_PATH = process.env.PUBLIC_PATH || path.join(__dirname, 'public');
+const DIST_PATH = path.join(__dirname, 'dist'); // Built React app
 const AVATAR_STATIC_PATH = path.join(PUBLIC_PATH, 'avatars', 'boy-ranger', 'boy-test-000.png');
 const DEFAULT_AVATAR = 'explorer';
 console.log('📁 Public path:', PUBLIC_PATH);
