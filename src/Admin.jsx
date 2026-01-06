@@ -26,6 +26,731 @@ const calculateAge = (birthday) => {
 };
 
 // ============================================
+// CSV IMPORT MODAL COMPONENT
+// ============================================
+
+function CSVImportModal({ isOpen, onClose, importType, token, onSuccess }) {
+  const [step, setStep] = useState(1); // 1: upload, 2: map columns, 2.5: value mapping, 3: importing, 4: done
+  const [csvData, setCsvData] = useState([]);
+  const [csvHeaders, setCsvHeaders] = useState([]);
+  const [columnMapping, setColumnMapping] = useState({});
+  const [customFields, setCustomFields] = useState([]);
+  const [valueMappings, setValueMappings] = useState({}); // For compliance fields: which values mean "complete"
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [error, setError] = useState('');
+
+  // Fields that need value mapping (boolean/completion status)
+  const complianceFields = ['livescan_date', 'mandatory_reporter_date'];
+
+  // Define required/optional fields based on import type
+  const fieldDefinitions = importType === 'volunteers' ? {
+    required: [
+      { key: 'first_name', label: 'First Name' },
+      { key: 'last_name', label: 'Last Name' },
+      { key: 'phone', label: 'Phone Number' },
+    ],
+    optional: [
+      { key: 'email', label: 'Email' },
+      { key: 'address', label: 'Street Address' },
+      { key: 'city', label: 'City' },
+      { key: 'state', label: 'State' },
+      { key: 'zip', label: 'Zip Code' },
+      { key: 'dob', label: 'Date of Birth' },
+      { key: 'service_area', label: 'Service Area / Ministry' },
+      { key: 'livescan_date', label: 'LiveScan Completed', isCompliance: true },
+      { key: 'mandatory_reporter_date', label: 'Mandatory Reporter Completed', isCompliance: true },
+      { key: 'serving_frequency', label: 'Serving Frequency' },
+      { key: 'start_date', label: 'Start Date' },
+    ]
+  } : {
+    required: [
+      { key: 'parent_name', label: 'Parent/Guardian Name' },
+      { key: 'phone', label: 'Phone Number' },
+    ],
+    optional: [
+      { key: 'email', label: 'Email' },
+      { key: 'address', label: 'Address' },
+      { key: 'child_first_name', label: 'Child First Name' },
+      { key: 'child_last_name', label: 'Child Last Name' },
+      { key: 'child_birthday', label: 'Child Birthday' },
+      { key: 'child_gender', label: 'Child Gender' },
+      { key: 'child_allergies', label: 'Child Allergies' },
+      { key: 'child_notes', label: 'Child Notes' },
+    ]
+  };
+
+  const allFields = [...fieldDefinitions.required, ...fieldDefinitions.optional];
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        const lines = text.split('\n').filter(line => line.trim());
+        
+        if (lines.length < 2) {
+          setError('CSV file must have at least a header row and one data row');
+          return;
+        }
+
+        // Parse CSV (handle quoted values)
+        const parseCSVLine = (line) => {
+          const result = [];
+          let current = '';
+          let inQuotes = false;
+          
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              result.push(current.trim());
+              current = '';
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim());
+          return result;
+        };
+
+        const headers = parseCSVLine(lines[0]);
+        const data = lines.slice(1).map(line => {
+          const values = parseCSVLine(line);
+          const row = {};
+          headers.forEach((header, i) => {
+            row[header] = values[i] || '';
+          });
+          return row;
+        }).filter(row => Object.values(row).some(v => v)); // Filter empty rows
+
+        setCsvHeaders(headers);
+        setCsvData(data);
+
+        // Auto-map columns based on header names
+        const autoMapping = {};
+        const usedHeaders = new Set();
+        
+        allFields.forEach(field => {
+          // Try to find a matching header for this field
+          const matchingHeader = headers.find(h => {
+            if (usedHeaders.has(h)) return false;
+            const headerNorm = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const keyNorm = field.key.replace(/_/g, '');
+            const labelNorm = field.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return headerNorm.includes(keyNorm) || headerNorm.includes(labelNorm) ||
+                   keyNorm.includes(headerNorm) || labelNorm.includes(headerNorm);
+          });
+          if (matchingHeader) {
+            autoMapping[field.key] = matchingHeader;
+            usedHeaders.add(matchingHeader);
+          }
+        });
+        setColumnMapping(autoMapping);
+
+        // Initialize ALL columns as potential custom fields (users can toggle any to custom)
+        setCustomFields(headers.map(h => ({
+          csv_column: h,
+          field_name: h.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+          field_label: h,
+          include: false // Start with all as not-included, user can mark as custom
+        })));
+
+        setStep(2);
+      } catch (err) {
+        setError('Failed to parse CSV file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    // Validate required fields are mapped
+    const missingRequired = fieldDefinitions.required.filter(f => !columnMapping[f.key]);
+    if (missingRequired.length > 0) {
+      setError(`Please map required fields: ${missingRequired.map(f => f.label).join(', ')}`);
+      return;
+    }
+
+    setImporting(true);
+    setError('');
+    setStep(3);
+
+    try {
+      const includedCustomFields = customFields.filter(cf => cf.include);
+      
+      const url = `${API_BASE}/api/import/${importType}`;
+      console.log('Import URL:', url);
+      console.log('API_BASE:', API_BASE);
+      console.log('importType:', importType);
+      console.log('Data rows:', csvData.length);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          data: csvData,
+          columnMapping,
+          customFields: includedCustomFields,
+          valueMappings // Include which values mean "completed" for compliance fields
+        })
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      const responseText = await response.text();
+      console.log('Response text (first 500 chars):', responseText.substring(0, 500));
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseErr) {
+        throw new Error(`Server returned invalid JSON. Status: ${response.status}. Response: ${responseText.substring(0, 200)}`);
+      }
+      
+      if (response.ok) {
+        setImportResult(result);
+        setStep(4);
+        if (onSuccess) onSuccess();
+      } else {
+        setError(result.error || 'Import failed');
+        setStep(2);
+      }
+    } catch (err) {
+      setError('Failed to import: ' + err.message);
+      setStep(2);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleClose = () => {
+    setStep(1);
+    setCsvData([]);
+    setCsvHeaders([]);
+    setColumnMapping({});
+    setCustomFields([]);
+    setValueMappings({});
+    setImportResult(null);
+    setError('');
+    onClose();
+  };
+
+  const toggleCustomField = (index) => {
+    setCustomFields(prev => prev.map((cf, i) => 
+      i === index ? { ...cf, include: !cf.include } : cf
+    ));
+  };
+
+  // Get unique values for a mapped column (for compliance field value mapping)
+  const getUniqueValues = (fieldKey) => {
+    const csvColumn = columnMapping[fieldKey];
+    if (!csvColumn) return [];
+    const values = csvData.map(row => row[csvColumn]).filter(v => v !== undefined && v !== null);
+    const unique = [...new Set(values)].slice(0, 20); // Limit to 20 unique values
+    return unique;
+  };
+
+  // Check if any compliance fields are mapped (need value mapping step)
+  const hasMappedComplianceFields = () => {
+    return complianceFields.some(field => columnMapping[field]);
+  };
+
+  // Auto-detect if a value looks like "complete" or a date
+  const detectCompletionValue = (value) => {
+    if (!value) return false;
+    const v = String(value).toLowerCase().trim();
+    // Common "complete" patterns
+    if (['o', 'yes', 'y', 'true', '1', '✓', '✔', 'complete', 'completed', 'done', 'x'].includes(v)) return true;
+    // Check if it looks like a date (has numbers and possibly slashes, dashes, or is a date string)
+    if (/\d{1,4}[-\/]\d{1,2}[-\/]\d{1,4}/.test(v)) return true;
+    if (/\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}/.test(v)) return true;
+    // Check for month names
+    if (/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(v)) return true;
+    return false;
+  };
+
+  // Initialize value mappings for compliance fields
+  const initializeValueMappings = () => {
+    const mappings = {};
+    complianceFields.forEach(field => {
+      const csvColumn = columnMapping[field];
+      if (csvColumn) {
+        const uniqueValues = getUniqueValues(field);
+        // Auto-detect which values mean "complete"
+        const completedValues = uniqueValues.filter(v => detectCompletionValue(v));
+        mappings[field] = {
+          csvColumn,
+          uniqueValues,
+          completedValues: completedValues.length > 0 ? completedValues : [],
+          treatAsDate: uniqueValues.some(v => /\d{1,4}[-\/]\d{1,2}/.test(String(v)))
+        };
+      }
+    });
+    setValueMappings(mappings);
+  };
+
+  // Proceed to value mapping step or directly to import
+  const handleProceedFromMapping = () => {
+    // Validate required fields
+    const missingRequired = fieldDefinitions.required.filter(f => !columnMapping[f.key]);
+    if (missingRequired.length > 0) {
+      setError(`Please map required fields: ${missingRequired.map(f => f.label).join(', ')}`);
+      return;
+    }
+    
+    if (hasMappedComplianceFields()) {
+      initializeValueMappings();
+      setStep(2.5);
+    } else {
+      handleImport();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden border border-slate-700 flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-bold text-white">
+              Import {importType === 'volunteers' ? 'Volunteers' : 'Families'}
+            </h3>
+            <p className="text-slate-400 text-sm">
+              {step === 1 && 'Upload a CSV file to get started'}
+              {step === 2 && 'Map your columns to our fields'}
+              {step === 2.5 && 'Configure compliance field values'}
+              {step === 3 && 'Importing your data...'}
+              {step === 4 && 'Import complete!'}
+            </p>
+          </div>
+          <button onClick={handleClose} className="text-slate-400 hover:text-white text-2xl">×</button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/50 rounded-lg px-4 py-3 mb-4 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Step 1: Upload */}
+          {step === 1 && (
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-6">
+                <span className="text-4xl">📄</span>
+              </div>
+              <h4 className="text-lg font-semibold text-white mb-2">Upload CSV File</h4>
+              <p className="text-slate-400 text-sm mb-6 max-w-md mx-auto">
+                Export your data from your current system as a CSV file, then upload it here. 
+                We'll help you map the columns to our system.
+              </p>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="csv-upload"
+              />
+              <label
+                htmlFor="csv-upload"
+                className="inline-block px-6 py-3 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 cursor-pointer transition-colors"
+              >
+                Choose CSV File
+              </label>
+              <p className="text-slate-500 text-xs mt-4">
+                Supported: .csv files with headers in the first row
+              </p>
+            </div>
+          )}
+
+          {/* Step 2: Map Columns */}
+          {step === 2 && (
+            <div>
+              <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
+                <p className="text-white font-medium mb-1">📊 Preview: {csvData.length} rows found, {csvHeaders.length} columns</p>
+                <p className="text-slate-400 text-sm">For each column in your CSV, choose what it maps to in our system.</p>
+              </div>
+
+              {/* Column Mapping - CSV Column Centric */}
+              <div className="mb-6">
+                <h4 className="text-white font-medium mb-3">Map Your Columns</h4>
+                <p className="text-slate-400 text-sm mb-4">
+                  Required fields: {fieldDefinitions.required.map(f => f.label).join(', ')}
+                </p>
+                
+                <div className="space-y-2">
+                  {csvHeaders.map((header, index) => {
+                    // Check if this header is mapped to a standard field
+                    const mappedToField = Object.entries(columnMapping).find(([key, val]) => val === header)?.[0];
+                    const fieldInfo = allFields.find(f => f.key === mappedToField);
+                    const isRequired = fieldDefinitions.required.some(f => f.key === mappedToField);
+                    
+                    // Check if marked as custom field
+                    const customFieldEntry = customFields.find(cf => cf.csv_column === header);
+                    const isCustomField = customFieldEntry?.include;
+                    
+                    // Sample value from first row
+                    const sampleValue = csvData[0]?.[header] || '';
+                    
+                    return (
+                      <div key={header} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg">
+                        {/* CSV Column Name */}
+                        <div className="w-48 flex-shrink-0">
+                          <p className="text-white font-medium text-sm truncate" title={header}>{header}</p>
+                          <p className="text-slate-500 text-xs truncate" title={sampleValue}>
+                            e.g. "{sampleValue.substring(0, 30)}{sampleValue.length > 30 ? '...' : ''}"
+                          </p>
+                        </div>
+                        
+                        {/* Arrow */}
+                        <span className="text-slate-500">→</span>
+                        
+                        {/* Mapping Dropdown */}
+                        <select
+                          value={isCustomField ? '__custom__' : (mappedToField || '')}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            
+                            if (value === '__custom__') {
+                              // Mark as custom field
+                              setCustomFields(prev => prev.map(cf => 
+                                cf.csv_column === header ? { ...cf, include: true } : cf
+                              ));
+                              // Remove from standard mapping if it was mapped
+                              if (mappedToField) {
+                                setColumnMapping(prev => {
+                                  const newMapping = { ...prev };
+                                  delete newMapping[mappedToField];
+                                  return newMapping;
+                                });
+                              }
+                            } else if (value === '') {
+                              // Skip this column
+                              setCustomFields(prev => prev.map(cf => 
+                                cf.csv_column === header ? { ...cf, include: false } : cf
+                              ));
+                              if (mappedToField) {
+                                setColumnMapping(prev => {
+                                  const newMapping = { ...prev };
+                                  delete newMapping[mappedToField];
+                                  return newMapping;
+                                });
+                              }
+                            } else {
+                              // Map to standard field
+                              setCustomFields(prev => prev.map(cf => 
+                                cf.csv_column === header ? { ...cf, include: false } : cf
+                              ));
+                              // Remove old mapping for this header
+                              const newMapping = { ...columnMapping };
+                              Object.keys(newMapping).forEach(key => {
+                                if (newMapping[key] === header) delete newMapping[key];
+                              });
+                              // Add new mapping
+                              newMapping[value] = header;
+                              setColumnMapping(newMapping);
+                            }
+                          }}
+                          className={`flex-1 bg-slate-600 border rounded-lg px-3 py-2 text-white text-sm focus:outline-none ${
+                            isRequired ? 'border-emerald-500' : 
+                            mappedToField || isCustomField ? 'border-blue-500' : 'border-slate-500'
+                          }`}
+                        >
+                          <option value="">-- Skip this column --</option>
+                          <optgroup label="Standard Fields">
+                            {allFields.map(field => {
+                              const isAlreadyMapped = columnMapping[field.key] && columnMapping[field.key] !== header;
+                              return (
+                                <option 
+                                  key={field.key} 
+                                  value={field.key}
+                                  disabled={isAlreadyMapped}
+                                >
+                                  {field.label} {fieldDefinitions.required.some(f => f.key === field.key) ? '*' : ''}
+                                  {isAlreadyMapped ? ` (mapped to "${columnMapping[field.key]}")` : ''}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                          <optgroup label="Custom">
+                            <option value="__custom__">💾 Save as Custom Field</option>
+                          </optgroup>
+                        </select>
+                        
+                        {/* Status indicator */}
+                        <div className="w-24 text-right">
+                          {isRequired && <span className="text-emerald-400 text-xs font-medium">✓ Required</span>}
+                          {mappedToField && !isRequired && <span className="text-blue-400 text-xs">Mapped</span>}
+                          {isCustomField && <span className="text-amber-400 text-xs">Custom</span>}
+                          {!mappedToField && !isCustomField && <span className="text-slate-500 text-xs">Skipped</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Required Fields Check */}
+              {fieldDefinitions.required.some(f => !columnMapping[f.key]) && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6">
+                  <p className="text-red-400 font-medium text-sm mb-1">⚠️ Missing Required Fields</p>
+                  <p className="text-red-300 text-sm">
+                    Please map: {fieldDefinitions.required.filter(f => !columnMapping[f.key]).map(f => f.label).join(', ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Preview */}
+              <div className="mb-6">
+                <h4 className="text-white font-medium mb-3">Data Preview (first 3 rows)</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-700">
+                        {csvHeaders.slice(0, 6).map(header => (
+                          <th key={header} className="text-left text-slate-300 px-3 py-2 font-medium">{header}</th>
+                        ))}
+                        {csvHeaders.length > 6 && <th className="text-slate-400 px-3 py-2">...</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvData.slice(0, 3).map((row, i) => (
+                        <tr key={i} className="border-t border-slate-600">
+                          {csvHeaders.slice(0, 6).map(header => (
+                            <td key={header} className="text-slate-300 px-3 py-2 truncate max-w-[150px]">{row[header]}</td>
+                          ))}
+                          {csvHeaders.length > 6 && <td className="text-slate-400 px-3 py-2">...</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2.5: Value Mapping for Compliance Fields */}
+          {step === 2.5 && (
+            <div>
+              <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
+                <p className="text-white font-medium mb-1">🔍 Configure Compliance Values</p>
+                <p className="text-slate-400 text-sm">
+                  We detected compliance fields in your import. Help us understand which values mean "completed".
+                </p>
+              </div>
+
+              {Object.entries(valueMappings).map(([fieldKey, mapping]) => {
+                const fieldDef = allFields.find(f => f.key === fieldKey);
+                return (
+                  <div key={fieldKey} className="mb-6 bg-slate-700/30 rounded-lg p-4">
+                    <h4 className="text-white font-medium mb-3">
+                      {fieldDef?.label || fieldKey}
+                      <span className="text-slate-400 text-sm font-normal ml-2">
+                        (from column: "{mapping.csvColumn}")
+                      </span>
+                    </h4>
+                    
+                    {/* Show unique values found */}
+                    <p className="text-slate-400 text-sm mb-3">
+                      We found {mapping.uniqueValues.length} unique value(s) in this column. 
+                      Select which values indicate completion:
+                    </p>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+                      {mapping.uniqueValues.map((value, idx) => {
+                        const isSelected = mapping.completedValues.includes(value);
+                        const displayValue = value === '' ? '(empty)' : String(value);
+                        return (
+                          <label 
+                            key={idx}
+                            className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
+                              isSelected ? 'bg-emerald-500/20 border border-emerald-500/50' : 'bg-slate-600/50 hover:bg-slate-600'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setValueMappings(prev => ({
+                                  ...prev,
+                                  [fieldKey]: {
+                                    ...prev[fieldKey],
+                                    completedValues: isSelected
+                                      ? prev[fieldKey].completedValues.filter(v => v !== value)
+                                      : [...prev[fieldKey].completedValues, value]
+                                  }
+                                }));
+                              }}
+                              className="w-4 h-4 rounded bg-slate-600 border-slate-500 text-emerald-500"
+                            />
+                            <span className={`text-sm truncate ${isSelected ? 'text-emerald-300' : 'text-slate-300'}`}>
+                              {displayValue.length > 20 ? displayValue.substring(0, 20) + '...' : displayValue}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    {/* Date detection hint */}
+                    {mapping.treatAsDate && (
+                      <p className="text-blue-400 text-xs">
+                        💡 This looks like a date field. Any non-empty date value will be saved, and the volunteer will be marked as completed.
+                      </p>
+                    )}
+                    
+                    {/* Summary */}
+                    <p className="text-slate-500 text-xs mt-2">
+                      {mapping.completedValues.length > 0 
+                        ? `✓ Values that mean "completed": ${mapping.completedValues.map(v => v === '' ? '(empty)' : `"${v}"`).join(', ')}`
+                        : '⚠️ No values selected - this field will be skipped'
+                      }
+                    </p>
+                  </div>
+                );
+              })}
+
+              {Object.keys(valueMappings).length === 0 && (
+                <div className="text-center py-8 text-slate-400">
+                  No compliance fields to configure.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Importing */}
+          {step === 3 && (
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                <span className="text-4xl">⏳</span>
+              </div>
+              <h4 className="text-lg font-semibold text-white mb-2">Importing Data...</h4>
+              <p className="text-slate-400 text-sm">
+                Processing {csvData.length} records. This may take a moment.
+              </p>
+            </div>
+          )}
+
+          {/* Step 4: Done */}
+          {step === 4 && importResult && (
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <span className="text-4xl">✅</span>
+              </div>
+              <h4 className="text-lg font-semibold text-white mb-4">Import Complete!</h4>
+              
+              <div className={`grid gap-4 max-w-lg mx-auto mb-6 ${importType === 'volunteers' ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <p className="text-3xl font-bold text-emerald-400">{importResult.imported}</p>
+                  <p className="text-slate-400 text-sm">New Records</p>
+                </div>
+                {importType === 'volunteers' && importResult.updated !== undefined && (
+                  <div className="bg-slate-700 rounded-lg p-4">
+                    <p className="text-3xl font-bold text-blue-400">{importResult.updated}</p>
+                    <p className="text-slate-400 text-sm">Parents Merged</p>
+                  </div>
+                )}
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <p className="text-3xl font-bold text-amber-400">{importResult.skipped}</p>
+                  <p className="text-slate-400 text-sm">Skipped</p>
+                </div>
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <p className="text-3xl font-bold text-slate-300">{importResult.total}</p>
+                  <p className="text-slate-400 text-sm">Total Rows</p>
+                </div>
+              </div>
+
+              {importType === 'volunteers' && importResult.updated > 0 && (
+                <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-4 text-left max-w-md mx-auto mb-4">
+                  <p className="text-blue-400 font-medium mb-1">👥 Parents Merged as Volunteers</p>
+                  <p className="text-blue-300 text-sm">
+                    {importResult.updated} existing parent(s) were found by phone number and marked as volunteers. 
+                    No duplicate profiles were created!
+                  </p>
+                </div>
+              )}
+
+              {importResult.errors && importResult.errors.length > 0 && (
+                <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 text-left max-w-md mx-auto mb-6">
+                  <p className="text-red-400 font-medium mb-2">Some rows had errors:</p>
+                  <ul className="text-red-300 text-sm space-y-1">
+                    {importResult.errors.map((err, i) => (
+                      <li key={i}>• {err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <p className="text-slate-400 text-sm mb-6">
+                {importResult.skipped > 0 && 'Skipped rows may have duplicate phone numbers or missing required data.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-700 flex justify-between">
+          {step === 2 && (
+            <>
+              <button
+                onClick={() => setStep(1)}
+                className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handleProceedFromMapping}
+                disabled={importing}
+                className="px-6 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50"
+              >
+                {hasMappedComplianceFields() ? 'Next: Configure Values →' : `Import ${csvData.length} Records`}
+              </button>
+            </>
+          )}
+          {step === 2.5 && (
+            <>
+              <button
+                onClick={() => setStep(2)}
+                className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+              >
+                ← Back to Mapping
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                className="px-6 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50"
+              >
+                Import {csvData.length} Records
+              </button>
+            </>
+          )}
+          {(step === 1 || step === 4) && (
+            <button
+              onClick={handleClose}
+              className="ml-auto px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+            >
+              {step === 4 ? 'Done' : 'Cancel'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // LOGIN SCREEN
 // ============================================
 
@@ -130,7 +855,7 @@ function Sidebar({ activeTab, setActiveTab, logo, onLogout }) {
     { id: 'families', label: 'Families', icon: '👨‍👩‍👧‍👦' },
     { id: 'volunteers', label: 'Volunteers', icon: '🙋' },
     { id: 'rewards', label: 'Rewards', icon: '🎁' },
-    { id: 'attendance', label: 'Attendance', icon: '📅' },
+    { id: 'reports', label: 'Reports', icon: '📋' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
 
@@ -371,6 +1096,7 @@ function FamiliesTab({ token }) {
   const [editingChild, setEditingChild] = useState(null);
   const [addingChild, setAddingChild] = useState(false);
   const [showAddFamilyModal, setShowAddFamilyModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   
   // Form states
   const [familyForm, setFamilyForm] = useState({ name: '', phone: '', email: '', parentName: '' });
@@ -393,10 +1119,13 @@ function FamiliesTab({ token }) {
   // Generate PIN from birthday (MMDDYY format)
   const generatePinFromBirthday = (birthday) => {
     if (!birthday) return '';
-    const date = new Date(birthday);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
+    // Parse the date string directly to avoid timezone issues
+    // birthday format is YYYY-MM-DD from the date input
+    const parts = birthday.split('-');
+    if (parts.length !== 3) return '';
+    const year = parts[0].slice(-2); // Last 2 digits of year
+    const month = parts[1];
+    const day = parts[2];
     return `${month}${day}${year}`;
   };
 
@@ -794,8 +1523,24 @@ function FamiliesTab({ token }) {
           >
           + Add Family
         </button>
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors flex items-center gap-2"
+        >
+          <span>📥</span>
+          <span>Import CSV</span>
+        </button>
         </div>
       </div>
+
+      {/* Import Modal */}
+      <CSVImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        importType="families"
+        token={token}
+        onSuccess={fetchFamilies}
+      />
 
       {/* Search Bar */}
       <div className="relative mb-6">
@@ -1492,6 +2237,7 @@ function FamiliesTab({ token }) {
 function AttendanceTab({ token }) {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('chart'); // 'chart' or 'table'
 
   useEffect(() => {
     fetchAttendance();
@@ -1511,6 +2257,142 @@ function AttendanceTab({ token }) {
     }
   };
 
+  // Export to CSV
+  const exportCSV = () => {
+    const headers = ['Date', 'Day', 'Check-ins'];
+    const rows = attendance.map(record => {
+      const date = new Date(record.date);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      return [record.date, dayName, record.count];
+    });
+    
+    const csvContent = [headers, ...rows]
+      .map(row => row.join(','))
+      .join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Export to Excel (using CSV with .xlsx extension - basic compatibility)
+  const exportExcel = () => {
+    const headers = ['Date', 'Day', 'Check-ins'];
+    const rows = attendance.map(record => {
+      const date = new Date(record.date);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      return [record.date, dayName, record.count];
+    });
+    
+    // Create a simple XML spreadsheet format that Excel can open
+    let excelContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="Attendance">
+<Table>
+<Row>
+${headers.map(h => `<Cell><Data ss:Type="String">${h}</Data></Cell>`).join('')}
+</Row>
+${rows.map(row => `<Row>
+${row.map((cell, i) => `<Cell><Data ss:Type="${i === 2 ? 'Number' : 'String'}">${cell}</Data></Cell>`).join('')}
+</Row>`).join('\n')}
+</Table>
+</Worksheet>
+</Workbook>`;
+    
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance-report-${new Date().toISOString().split('T')[0]}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Export to PDF (using browser print)
+  const exportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    const totalCheckins = attendance.reduce((sum, r) => sum + r.count, 0);
+    const avgCheckins = attendance.length > 0 ? Math.round(totalCheckins / attendance.length) : 0;
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Attendance Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+          h1 { color: #10b981; margin-bottom: 10px; }
+          .subtitle { color: #666; margin-bottom: 30px; }
+          .stats { display: flex; gap: 40px; margin-bottom: 30px; }
+          .stat { background: #f3f4f6; padding: 20px; border-radius: 8px; }
+          .stat-value { font-size: 32px; font-weight: bold; color: #10b981; }
+          .stat-label { color: #666; font-size: 14px; }
+          table { width: 100%; border-collapse: collapse; }
+          th { background: #1e293b; color: white; text-align: left; padding: 12px; }
+          td { padding: 12px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background: #f9fafb; }
+          .footer { margin-top: 40px; color: #999; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <h1>Adventure Kids Attendance Report</h1>
+        <p class="subtitle">Generated on ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-value">${totalCheckins}</div>
+            <div class="stat-label">Total Check-ins</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${avgCheckins}</div>
+            <div class="stat-label">Average per Day</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${attendance.length}</div>
+            <div class="stat-label">Days Recorded</div>
+          </div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Day</th>
+              <th>Check-ins</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${attendance.map(record => {
+              const date = new Date(record.date);
+              const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+              return `<tr>
+                <td>${record.date}</td>
+                <td>${dayName}</td>
+                <td><strong>${record.count}</strong></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        
+        <p class="footer">Adventure Kids Check-In System</p>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  // Calculate chart data
+  const maxCount = Math.max(...attendance.map(r => r.count), 1);
+  const totalCheckins = attendance.reduce((sum, r) => sum + r.count, 0);
+  const avgCheckins = attendance.length > 0 ? Math.round(totalCheckins / attendance.length) : 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1521,37 +2403,151 @@ function AttendanceTab({ token }) {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-white mb-6">Attendance History</h2>
+      {/* Header with title and controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <h2 className="text-2xl font-bold text-white">Attendance History</h2>
+        
+        <div className="flex items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex bg-slate-700 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('chart')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'chart' 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              📊 Chart
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'table' 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              📋 Table
+            </button>
+          </div>
+          
+          {/* Export Buttons */}
+          {attendance.length > 0 && (
+            <div className="flex gap-2">
+              <button
+                onClick={exportCSV}
+                className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors"
+                title="Export as CSV"
+              >
+                CSV
+              </button>
+              <button
+                onClick={exportExcel}
+                className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors"
+                title="Export as Excel"
+              >
+                Excel
+              </button>
+              <button
+                onClick={exportPDF}
+                className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors"
+                title="Export as PDF"
+              >
+                PDF
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Stats Summary */}
+      {attendance.length > 0 && (
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <p className="text-slate-400 text-sm">Total Check-ins</p>
+            <p className="text-3xl font-bold text-emerald-400">{totalCheckins}</p>
+          </div>
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <p className="text-slate-400 text-sm">Average per Day</p>
+            <p className="text-3xl font-bold text-blue-400">{avgCheckins}</p>
+          </div>
+          <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+            <p className="text-slate-400 text-sm">Days Recorded</p>
+            <p className="text-3xl font-bold text-purple-400">{attendance.length}</p>
+          </div>
+        </div>
+      )}
       
       {attendance.length === 0 ? (
         <div className="bg-slate-800 rounded-xl p-12 border border-slate-700 text-center">
           <p className="text-slate-400">No check-ins recorded yet</p>
         </div>
+      ) : viewMode === 'chart' ? (
+        /* Chart View */
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
+          <div className="flex items-end gap-2 h-64">
+            {attendance.slice(-30).map((record, i) => {
+              const height = (record.count / maxCount) * 100;
+              const date = new Date(record.date);
+              const dayShort = date.toLocaleDateString('en-US', { weekday: 'short' });
+              const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center group">
+                  {/* Tooltip */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white text-xs px-2 py-1 rounded mb-1 whitespace-nowrap">
+                    {monthDay}: {record.count} check-ins
+                  </div>
+                  
+                  {/* Bar */}
+                  <div 
+                    className="w-full bg-gradient-to-t from-emerald-600 to-emerald-400 rounded-t-md transition-all hover:from-emerald-500 hover:to-emerald-300 cursor-pointer"
+                    style={{ height: `${Math.max(height, 2)}%` }}
+                  />
+                  
+                  {/* Label */}
+                  <div className="mt-2 text-center">
+                    <p className="text-slate-500 text-xs">{dayShort}</p>
+                    <p className="text-slate-400 text-xs font-medium">{record.count}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {attendance.length > 30 && (
+            <p className="text-slate-500 text-sm text-center mt-4">
+              Showing last 30 days. View table for complete history.
+            </p>
+          )}
+        </div>
       ) : (
-      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-slate-700">
-            <tr>
-              <th className="text-left text-slate-300 px-6 py-4 font-semibold">Date</th>
+        /* Table View */
+        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-slate-700">
+              <tr>
+                <th className="text-left text-slate-300 px-6 py-4 font-semibold">Date</th>
                 <th className="text-left text-slate-300 px-6 py-4 font-semibold">Day</th>
-              <th className="text-left text-slate-300 px-6 py-4 font-semibold">Check-ins</th>
-            </tr>
-          </thead>
-          <tbody>
+                <th className="text-left text-slate-300 px-6 py-4 font-semibold">Check-ins</th>
+              </tr>
+            </thead>
+            <tbody>
               {attendance.map((record, i) => {
                 const date = new Date(record.date);
                 const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-              return (
-                <tr key={i} className="border-t border-slate-700 hover:bg-slate-700/50">
-                  <td className="px-6 py-4 text-white font-medium">{record.date}</td>
+                return (
+                  <tr key={i} className="border-t border-slate-700 hover:bg-slate-700/50">
+                    <td className="px-6 py-4 text-white font-medium">{record.date}</td>
                     <td className="px-6 py-4 text-slate-300">{dayName}</td>
-                  <td className="px-6 py-4 text-emerald-400 font-semibold">{record.count}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                    <td className="px-6 py-4 text-emerald-400 font-semibold">{record.count}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -1567,17 +2563,27 @@ function VolunteersTab({ token }) {
   const [selectedVolunteer, setSelectedVolunteer] = useState(null);
   const [editingVolunteer, setEditingVolunteer] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Compliance state
+  const [compliance, setCompliance] = useState({
+    livescan_completed: false,
+    livescan_date: '',
+    mandatory_reporting_completed: false,
+    mandatory_reporting_date: '',
+    notes: ''
+  });
+  const [savingCompliance, setSavingCompliance] = useState(false);
   
   const [volunteerForm, setVolunteerForm] = useState({
     first_name: '',
     last_name: '',
     phone: '',
     email: '',
-    pin: '',
-    avatar: DEFAULT_AVATAR
+    pin: ''
   });
 
   useEffect(() => {
@@ -1598,6 +2604,53 @@ function VolunteersTab({ token }) {
     }
   };
 
+  const fetchCompliance = async (volunteerId) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/volunteer-compliance/${volunteerId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCompliance({
+          livescan_completed: data.livescan_completed || false,
+          livescan_date: data.livescan_date || '',
+          mandatory_reporting_completed: data.mandatory_reporting_completed || false,
+          mandatory_reporting_date: data.mandatory_reporting_date || '',
+          notes: data.notes || ''
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching compliance:', err);
+    }
+  };
+
+  const handleSaveCompliance = async () => {
+    if (!selectedVolunteer?.child_id) return;
+    
+    setSavingCompliance(true);
+    try {
+      await fetch(`${API_BASE}/api/volunteer-compliance/${selectedVolunteer.child_id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(compliance)
+      });
+    } catch (err) {
+      console.error('Error saving compliance:', err);
+    } finally {
+      setSavingCompliance(false);
+    }
+  };
+
+  // Fetch compliance when volunteer is selected
+  useEffect(() => {
+    if (selectedVolunteer?.child_id) {
+      fetchCompliance(selectedVolunteer.child_id);
+    }
+  }, [selectedVolunteer?.child_id]);
+
   const formatPhone = (phone) => {
     if (!phone) return '';
     const clean = phone.replace(/\D/g, '');
@@ -1613,8 +2666,7 @@ function VolunteersTab({ token }) {
       last_name: selectedVolunteer.last_name || '',
       phone: selectedVolunteer.phone || '',
       email: selectedVolunteer.email || '',
-      pin: selectedVolunteer.pin || '',
-      avatar: DEFAULT_AVATAR
+      pin: selectedVolunteer.pin || ''
     });
     setEditingVolunteer(true);
     setError('');
@@ -1664,8 +2716,7 @@ function VolunteersTab({ token }) {
           body: JSON.stringify({
             first_name: volunteerForm.first_name,
             last_name: volunteerForm.last_name,
-            pin: volunteerForm.pin,
-            avatar: volunteerForm.avatar
+            pin: volunteerForm.pin
           })
         });
       }
@@ -1731,7 +2782,7 @@ function VolunteersTab({ token }) {
           first_name: volunteerForm.first_name,
           last_name: volunteerForm.last_name,
           pin: volunteerForm.pin || Math.floor(100000 + Math.random() * 900000).toString(),
-          avatar: volunteerForm.avatar,
+          avatar: 'explorer',
           notes: 'Volunteer'
         })
       });
@@ -1743,8 +2794,7 @@ function VolunteersTab({ token }) {
         last_name: '',
         phone: '',
         email: '',
-        pin: '',
-        avatar: DEFAULT_AVATAR
+        pin: ''
       });
     } catch (err) {
       setError(err.message);
@@ -1803,8 +2853,7 @@ function VolunteersTab({ token }) {
               last_name: '',
               phone: '',
               email: '',
-              pin: '',
-              avatar: DEFAULT_AVATAR
+              pin: ''
             });
             setError('');
             setShowAddModal(true);
@@ -1814,7 +2863,23 @@ function VolunteersTab({ token }) {
           <span>➕</span>
           <span>Add Volunteer</span>
         </button>
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors flex items-center gap-2"
+        >
+          <span>📥</span>
+          <span>Import CSV</span>
+        </button>
       </div>
+
+      {/* Import Modal */}
+      <CSVImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        importType="volunteers"
+        token={token}
+        onSuccess={fetchVolunteers}
+      />
 
       {/* Search */}
       <div className="relative">
@@ -1842,27 +2907,28 @@ function VolunteersTab({ token }) {
                   setSelectedVolunteer(volunteer);
                   setEditingVolunteer(false);
                 }}
-                className={`w-full p-4 text-left hover:bg-slate-700/50 transition-colors flex items-center gap-3 ${
+                className={`w-full p-4 text-left hover:bg-slate-700/50 transition-colors ${
                   selectedVolunteer?.id === volunteer.id ? 'bg-slate-700/50' : ''
                 }`}
               >
-                <img
-                  src={getAvatarUrl()}
-                  alt=""
-                  className="w-10 h-10 rounded-full"
-                />
-                <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <p className="text-white font-medium truncate">{volunteer.volunteer_name}</p>
                     {volunteer.is_also_parent && (
                       <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">Parent</span>
                     )}
                   </div>
-                  <p className="text-slate-400 text-sm">{formatPhone(volunteer.phone)}</p>
+                  <span className="text-emerald-400 text-sm font-medium">{volunteer.totalCheckins || 0} shifts</span>
                 </div>
-                <div className="text-right">
-                  <p className="text-emerald-400 text-sm">🔥 {volunteer.streak || 0}</p>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">{formatPhone(volunteer.phone)}</span>
+                  {volunteer.service_area && (
+                    <span className="text-slate-500 truncate ml-2">{volunteer.service_area}</span>
+                  )}
                 </div>
+                {volunteer.serving_frequency && (
+                  <p className="text-slate-500 text-xs mt-1">{volunteer.serving_frequency}</p>
+                )}
               </button>
             ))}
             {filteredVolunteers.length === 0 && (
@@ -1881,24 +2947,17 @@ function VolunteersTab({ token }) {
                 <>
                   {/* View Mode */}
                   <div className="flex items-start justify-between mb-6">
-                    <div className="flex items-center gap-4">
-                      <img
-                        src={getAvatarUrl()}
-                        alt=""
-                        className="w-20 h-20 rounded-xl"
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-2xl font-bold text-white">{selectedVolunteer.volunteer_name}</h2>
-                          {selectedVolunteer.is_also_parent && (
-                            <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">Also a Parent</span>
-                          )}
-                        </div>
-                        <p className="text-slate-400">{formatPhone(selectedVolunteer.phone)}</p>
-                        {selectedVolunteer.email && (
-                          <p className="text-slate-400 text-sm">{selectedVolunteer.email}</p>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h2 className="text-2xl font-bold text-white">{selectedVolunteer.volunteer_name}</h2>
+                        {selectedVolunteer.is_also_parent && (
+                          <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">Also a Parent</span>
                         )}
                       </div>
+                      <p className="text-slate-400">{formatPhone(selectedVolunteer.phone)}</p>
+                      {selectedVolunteer.email && (
+                        <p className="text-slate-400 text-sm">{selectedVolunteer.email}</p>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1916,26 +2975,114 @@ function VolunteersTab({ token }) {
                     </div>
                   </div>
 
+                  {/* Service Info */}
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="bg-slate-700/50 rounded-lg p-4">
+                      <p className="text-slate-400 text-sm mb-1">Service Area</p>
+                      <p className="text-white font-medium">{selectedVolunteer.service_area || 'Not assigned'}</p>
+                    </div>
+                    <div className="bg-slate-700/50 rounded-lg p-4">
+                      <p className="text-slate-400 text-sm mb-1">Serving Frequency</p>
+                      <p className="text-white font-medium">{selectedVolunteer.serving_frequency || 'Not set'}</p>
+                    </div>
+                  </div>
+
                   {/* Stats */}
-                  <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="grid grid-cols-2 gap-4 mb-6">
                     <div className="bg-slate-700/50 rounded-lg p-4 text-center">
                       <p className="text-3xl font-bold text-emerald-400">{selectedVolunteer.totalCheckins || 0}</p>
-                      <p className="text-slate-400 text-sm">Total Check-ins</p>
+                      <p className="text-slate-400 text-sm">Shifts Served</p>
                     </div>
                     <div className="bg-slate-700/50 rounded-lg p-4 text-center">
-                      <p className="text-3xl font-bold text-orange-400">🔥 {selectedVolunteer.streak || 0}</p>
-                      <p className="text-slate-400 text-sm">Current Streak</p>
-                    </div>
-                    <div className="bg-slate-700/50 rounded-lg p-4 text-center">
-                      <p className="text-3xl font-bold text-yellow-400">🏆 {selectedVolunteer.badges || 0}</p>
-                      <p className="text-slate-400 text-sm">Badges Earned</p>
+                      <p className="text-lg font-medium text-slate-300">{selectedVolunteer.start_date || 'Unknown'}</p>
+                      <p className="text-slate-400 text-sm">Start Date</p>
                     </div>
                   </div>
 
                   {/* PIN */}
-                  <div className="bg-slate-700/50 rounded-lg p-4">
+                  <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
                     <p className="text-slate-400 text-sm mb-1">Check-in PIN</p>
                     <p className="text-2xl font-mono text-white tracking-wider">{selectedVolunteer.pin || 'Not set'}</p>
+                  </div>
+
+                  {/* Compliance Section */}
+                  <div className="bg-slate-700/50 rounded-lg p-4">
+                    <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                      <span>🛡️</span> Compliance & Background Checks
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      {/* LiveScan */}
+                      <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
+                        <label className="flex items-center gap-3 cursor-pointer flex-1">
+                          <input
+                            type="checkbox"
+                            checked={compliance.livescan_completed}
+                            onChange={(e) => setCompliance(prev => ({ 
+                              ...prev, 
+                              livescan_completed: e.target.checked,
+                              livescan_date: e.target.checked && !prev.livescan_date ? new Date().toISOString().split('T')[0] : prev.livescan_date
+                            }))}
+                            className="w-5 h-5 rounded bg-slate-600 border-slate-500 text-emerald-500 focus:ring-emerald-500"
+                          />
+                          <div>
+                            <p className="text-white font-medium">LiveScan / Background Check</p>
+                            <p className="text-slate-400 text-xs">DOJ fingerprint background check</p>
+                          </div>
+                        </label>
+                        {compliance.livescan_completed ? (
+                          <span className="text-emerald-400 font-medium">✓ Complete</span>
+                        ) : (
+                          <span className="text-red-400 text-sm font-medium">Not Completed</span>
+                        )}
+                      </div>
+
+                      {/* Mandatory Reporting */}
+                      <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
+                        <label className="flex items-center gap-3 cursor-pointer flex-1">
+                          <input
+                            type="checkbox"
+                            checked={compliance.mandatory_reporting_completed}
+                            onChange={(e) => setCompliance(prev => ({ 
+                              ...prev, 
+                              mandatory_reporting_completed: e.target.checked,
+                              mandatory_reporting_date: e.target.checked && !prev.mandatory_reporting_date ? new Date().toISOString().split('T')[0] : prev.mandatory_reporting_date
+                            }))}
+                            className="w-5 h-5 rounded bg-slate-600 border-slate-500 text-emerald-500 focus:ring-emerald-500"
+                          />
+                          <div>
+                            <p className="text-white font-medium">Mandatory Reporting Training</p>
+                            <p className="text-slate-400 text-xs">Child abuse reporting training</p>
+                          </div>
+                        </label>
+                        {compliance.mandatory_reporting_completed ? (
+                          <span className="text-emerald-400 font-medium">✓ Complete</span>
+                        ) : (
+                          <span className="text-red-400 text-sm font-medium">Not Completed</span>
+                        )}
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Compliance Notes</label>
+                        <textarea
+                          value={compliance.notes}
+                          onChange={(e) => setCompliance(prev => ({ ...prev, notes: e.target.value }))}
+                          placeholder="Additional notes about certifications, training, etc."
+                          rows={2}
+                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm resize-none"
+                        />
+                      </div>
+
+                      {/* Save Button */}
+                      <button
+                        onClick={handleSaveCompliance}
+                        disabled={savingCompliance}
+                        className="w-full py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 text-sm font-medium"
+                      >
+                        {savingCompliance ? 'Saving...' : 'Save Compliance Status'}
+                      </button>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -2672,6 +3819,376 @@ function RewardsTab({ token }) {
 }
 
 // ============================================
+// REPORTS TAB
+// ============================================
+
+function ReportsTab({ token }) {
+  const [savedReports, setSavedReports] = useState([]);
+  const [selectedReport, setSelectedReport] = useState('attendance_summary');
+  const [reportData, setReportData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+    month: new Date().getMonth() + 1
+  });
+
+  useEffect(() => {
+    fetchReportSchema();
+    // Load attendance summary by default
+    runReport('attendance_summary');
+  }, []);
+
+  const fetchReportSchema = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/reports/schema`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      setSavedReports(data.savedReports || []);
+    } catch (err) {
+      console.error('Error fetching report schema:', err);
+    }
+  };
+
+  const runReport = async (reportId, customFilters = {}) => {
+    setLoading(true);
+    setSelectedReport(reportId);
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/reports/query`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          reportType: reportId,
+          filters: { ...filters, ...customFilters }
+        })
+      });
+      const data = await response.json();
+      setReportData(data.data || []);
+    } catch (err) {
+      console.error('Error running report:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Export functions
+  const exportCSV = () => {
+    if (reportData.length === 0) return;
+    
+    const headers = Object.keys(reportData[0]);
+    const rows = reportData.map(row => headers.map(h => {
+      const val = row[h];
+      // Escape commas and quotes
+      if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val ?? '';
+    }));
+    
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedReport}-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = () => {
+    if (reportData.length === 0) return;
+    
+    const headers = Object.keys(reportData[0]);
+    
+    let excelContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="Report">
+<Table>
+<Row>
+${headers.map(h => `<Cell><Data ss:Type="String">${h}</Data></Cell>`).join('')}
+</Row>
+${reportData.map(row => `<Row>
+${headers.map(h => {
+  const val = row[h];
+  const type = typeof val === 'number' ? 'Number' : 'String';
+  return `<Cell><Data ss:Type="${type}">${val ?? ''}</Data></Cell>`;
+}).join('')}
+</Row>`).join('\n')}
+</Table>
+</Worksheet>
+</Workbook>`;
+    
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedReport}-report-${new Date().toISOString().split('T')[0]}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    if (reportData.length === 0) return;
+    
+    const headers = Object.keys(reportData[0]);
+    const reportInfo = savedReports.find(r => r.id === selectedReport);
+    const printWindow = window.open('', '_blank');
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${reportInfo?.name || 'Report'}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; color: #333; font-size: 12px; }
+          h1 { color: #10b981; margin-bottom: 5px; font-size: 24px; }
+          .subtitle { color: #666; margin-bottom: 20px; }
+          .meta { color: #999; font-size: 11px; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          th { background: #1e293b; color: white; text-align: left; padding: 8px; font-size: 10px; }
+          td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background: #f9fafb; }
+          .footer { margin-top: 30px; color: #999; font-size: 10px; }
+        </style>
+      </head>
+      <body>
+        <h1>${reportInfo?.name || 'Report'}</h1>
+        <p class="subtitle">${reportInfo?.description || ''}</p>
+        <p class="meta">Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} | Records: ${reportData.length}</p>
+        
+        <table>
+          <thead>
+            <tr>
+              ${headers.map(h => `<th>${h.replace(/_/g, ' ').toUpperCase()}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${reportData.slice(0, 500).map(row => `<tr>
+              ${headers.map(h => `<td>${row[h] ?? ''}</td>`).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        ${reportData.length > 500 ? '<p class="meta">Showing first 500 records. Export to CSV/Excel for complete data.</p>' : ''}
+        <p class="footer">Adventure Kids Check-In System</p>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const getReportIcon = (id) => {
+    const icons = {
+      families: '👨‍👩‍👧‍👦',
+      children: '👶',
+      checkins: '✅',
+      attendance_summary: '📊',
+      rewards: '🏆',
+      volunteers: '🙋',
+      birthdays: '🎂',
+      allergies: '⚠️'
+    };
+    return icons[id] || '📋';
+  };
+
+  const formatCellValue = (key, value) => {
+    if (value === null || value === undefined) return '-';
+    if (key.includes('date') || key.includes('_at')) {
+      try {
+        return new Date(value).toLocaleDateString('en-US', { 
+          year: 'numeric', month: 'short', day: 'numeric',
+          ...(key.includes('_at') ? { hour: 'numeric', minute: '2-digit' } : {})
+        });
+      } catch { return value; }
+    }
+    if (key === 'phone' && value) {
+      const clean = value.toString().replace(/\D/g, '');
+      if (clean.length === 10) {
+        return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+      }
+    }
+    return value;
+  };
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-white mb-6">Reports</h2>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Report Selection Sidebar */}
+        <div className="lg:col-span-1">
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
+            <h3 className="text-lg font-semibold text-white mb-4">Saved Reports</h3>
+            
+            <div className="space-y-2">
+              {savedReports.map((report) => (
+                <button
+                  key={report.id}
+                  onClick={() => runReport(report.id)}
+                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                    selectedReport === report.id
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{getReportIcon(report.id)}</span>
+                    <div>
+                      <p className="font-medium">{report.name}</p>
+                      <p className={`text-xs ${selectedReport === report.id ? 'text-emerald-100' : 'text-slate-400'}`}>
+                        {report.description}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Filters */}
+            {selectedReport === 'checkins' && (
+              <div className="mt-6 pt-4 border-t border-slate-600">
+                <h4 className="text-sm font-medium text-slate-300 mb-3">Date Range</h4>
+                <div className="space-y-2">
+                  <input
+                    type="date"
+                    value={filters.startDate}
+                    onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+                    placeholder="Start date"
+                  />
+                  <input
+                    type="date"
+                    value={filters.endDate}
+                    onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+                    placeholder="End date"
+                  />
+                  <button
+                    onClick={() => runReport('checkins')}
+                    className="w-full py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600"
+                  >
+                    Apply Filter
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selectedReport === 'birthdays' && (
+              <div className="mt-6 pt-4 border-t border-slate-600">
+                <h4 className="text-sm font-medium text-slate-300 mb-3">Select Month</h4>
+                <select
+                  value={filters.month}
+                  onChange={(e) => {
+                    const month = parseInt(e.target.value);
+                    setFilters(prev => ({ ...prev, month }));
+                    runReport('birthdays', { month });
+                  }}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+                >
+                  {['January', 'February', 'March', 'April', 'May', 'June', 
+                    'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => (
+                    <option key={i} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Report Results */}
+        <div className="lg:col-span-3">
+          {!selectedReport ? (
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-12 text-center">
+              <span className="text-6xl mb-4 block">📋</span>
+              <h3 className="text-xl font-semibold text-white mb-2">Select a Report</h3>
+              <p className="text-slate-400">Choose a report from the sidebar to view data</p>
+            </div>
+          ) : loading ? (
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-12 text-center">
+              <div className="text-slate-400">Loading report...</div>
+            </div>
+          ) : (
+            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+              {/* Report Header */}
+              <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    {savedReports.find(r => r.id === selectedReport)?.name}
+                  </h3>
+                  <p className="text-sm text-slate-400">{reportData.length} records found</p>
+                </div>
+                
+                {reportData.length > 0 && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={exportCSV}
+                      className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors"
+                    >
+                      CSV
+                    </button>
+                    <button
+                      onClick={exportExcel}
+                      className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors"
+                    >
+                      Excel
+                    </button>
+                    <button
+                      onClick={exportPDF}
+                      className="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors"
+                    >
+                      PDF
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Report Table */}
+              {reportData.length === 0 ? (
+                <div className="p-12 text-center">
+                  <p className="text-slate-400">No data found for this report</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-700 sticky top-0">
+                      <tr>
+                        {Object.keys(reportData[0]).map((key) => (
+                          <th key={key} className="text-left text-slate-300 px-4 py-3 font-semibold text-sm whitespace-nowrap">
+                            {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.map((row, i) => (
+                        <tr key={i} className="border-t border-slate-700 hover:bg-slate-700/50">
+                          {Object.entries(row).map(([key, value], j) => (
+                            <td key={j} className="px-4 py-3 text-slate-300 text-sm whitespace-nowrap">
+                              {formatCellValue(key, value)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // SETTINGS TAB
 // ============================================
 
@@ -2687,10 +4204,22 @@ function SettingsTab({ logo, setLogo, token }) {
   const [roomForm, setRoomForm] = useState({ name: '', age_range: '', capacity: '' });
   const [roomSaving, setRoomSaving] = useState(false);
   
+  // User management state
+  const [users, setUsers] = useState([]);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [userForm, setUserForm] = useState({ username: '', password: '', role: 'admin' });
+  const [userSaving, setUserSaving] = useState(false);
+  const [userError, setUserError] = useState('');
+  
   // Template state
   const [templates, setTemplates] = useState([]);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showLabelEditor, setShowLabelEditor] = useState(false);
+  const [labelEditorTemplate, setLabelEditorTemplate] = useState(null);
+  const [labelPreviewType, setLabelPreviewType] = useState('kid');
+  const [labelPreviewUrl, setLabelPreviewUrl] = useState(null);
+  const [labelPreviewLoading, setLabelPreviewLoading] = useState(false);
   const [templateForm, setTemplateForm] = useState({
     name: '',
     day_of_week: '',
@@ -2699,14 +4228,126 @@ function SettingsTab({ logo, setLogo, token }) {
     checkout_enabled: false,
     room_ids: [],
     track_streaks: true,
-    streak_reset_days: 7
+    streak_reset_days: 7,
+    print_volunteer_badges: true,
+    label_settings: null
   });
   const [templateSaving, setTemplateSaving] = useState(false);
+  
+  // Default label settings
+  const defaultLabelSettings = {
+    kidLabel: {
+      enabled: true,
+      showAvatar: true,
+      showName: true,
+      showRoom: true,
+      showStreak: true,
+      showBadges: true,
+      showRank: true,
+      showPickupCode: true,
+      showAllergies: true,
+      showDate: true,
+      nameSize: 110,
+      roomSize: 44,
+      accentColor: '#10B981',
+      borderStyle: 'pointed',
+    },
+    parentLabel: {
+      enabled: true,
+      showLogo: false,
+      showFamilyName: true,
+      showChildren: true,
+      showPickupCodes: true,
+      showRooms: true,
+      showDate: true,
+      showTime: true,
+      titleSize: 48,
+      nameSize: 36,
+      accentColor: '#3B82F6',
+    },
+    volunteerLabel: {
+      enabled: true,
+      showInitials: true,
+      showName: true,
+      showServiceArea: true,
+      showDate: true,
+      nameSize: 154,
+      serviceAreaSize: 62,
+      dateSize: 50,
+      accentColor: '#4F46E5',
+    }
+  };
 
   useEffect(() => {
     fetchRooms();
     fetchTemplates();
+    fetchUsers();
   }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data);
+      }
+    } catch (err) {
+      console.error('Error fetching users:', err);
+    }
+  };
+
+  const handleAddUser = async () => {
+    if (!userForm.username.trim() || !userForm.password.trim()) {
+      setUserError('Username and password are required');
+      return;
+    }
+    if (userForm.password.length < 6) {
+      setUserError('Password must be at least 6 characters');
+      return;
+    }
+    
+    setUserSaving(true);
+    setUserError('');
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/users`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(userForm)
+      });
+      
+      if (response.ok) {
+        await fetchUsers();
+        setShowUserModal(false);
+        setUserForm({ username: '', password: '', role: 'admin' });
+      } else {
+        const data = await response.json();
+        setUserError(data.error || 'Failed to create user');
+      }
+    } catch (err) {
+      setUserError('Error creating user');
+    }
+    setUserSaving(false);
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    
+    try {
+      await fetch(`${API_BASE}/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      await fetchUsers();
+    } catch (err) {
+      console.error('Error deleting user:', err);
+    }
+  };
 
   const fetchRooms = async () => {
     try {
@@ -2742,7 +4383,9 @@ function SettingsTab({ logo, setLogo, token }) {
       checkout_enabled: false,
       room_ids: rooms.map(r => r.id), // Default to all rooms selected
       track_streaks: true,
-      streak_reset_days: 7
+      streak_reset_days: 7,
+      print_volunteer_badges: true,
+      label_settings: { ...defaultLabelSettings }
     });
     setShowTemplateModal(true);
   };
@@ -2757,7 +4400,9 @@ function SettingsTab({ logo, setLogo, token }) {
       checkout_enabled: template.checkout_enabled,
       room_ids: template.room_ids || [],
       track_streaks: template.track_streaks !== false,
-      streak_reset_days: template.streak_reset_days || 7
+      streak_reset_days: template.streak_reset_days || 7,
+      print_volunteer_badges: template.print_volunteer_badges !== false,
+      label_settings: template.label_settings || { ...defaultLabelSettings }
     });
     setShowTemplateModal(true);
   };
@@ -2785,7 +4430,9 @@ function SettingsTab({ logo, setLogo, token }) {
           checkout_enabled: templateForm.checkout_enabled,
           room_ids: templateForm.room_ids,
           track_streaks: templateForm.track_streaks,
-          streak_reset_days: templateForm.streak_reset_days
+          streak_reset_days: templateForm.streak_reset_days,
+          print_volunteer_badges: templateForm.print_volunteer_badges,
+          label_settings: templateForm.label_settings
         })
       });
       
@@ -2796,6 +4443,101 @@ function SettingsTab({ logo, setLogo, token }) {
       }
     } catch (err) {
       console.error('Error saving template:', err);
+    }
+    setTemplateSaving(false);
+  };
+
+  // Open label editor for a template
+  const handleOpenLabelEditor = (template) => {
+    setLabelEditorTemplate(template);
+    setTemplateForm(prev => ({
+      ...prev,
+      label_settings: template.label_settings || { ...defaultLabelSettings }
+    }));
+    setLabelPreviewType('kid');
+    setShowLabelEditor(true);
+    // Generate initial preview
+    generateLabelPreview('kid', template.label_settings || defaultLabelSettings);
+  };
+
+  // Generate label preview
+  const generateLabelPreview = async (type, settings) => {
+    setLabelPreviewLoading(true);
+    try {
+      const labelSettings = settings || templateForm.label_settings || defaultLabelSettings;
+      const settingsForType = type === 'kid' ? labelSettings.kidLabel 
+        : type === 'parent' ? labelSettings.parentLabel 
+        : labelSettings.volunteerLabel;
+      
+      const response = await fetch(`${API_BASE}/api/label-preview`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          labelType: type,
+          settings: settingsForType,
+          sampleData: type === 'kid' 
+            ? { name: 'Sample Child', room: 'Kids Room', allergies: 'None' }
+            : type === 'parent'
+            ? { familyName: 'Sample Family', children: [{ name: 'Child One', pickupCode: 'ABC1', room: 'Room 1' }] }
+            : { name: 'Sample Volunteer', serviceArea: 'Kids Ministry' }
+        })
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        setLabelPreviewUrl(url);
+      }
+    } catch (err) {
+      console.error('Error generating preview:', err);
+    }
+    setLabelPreviewLoading(false);
+  };
+
+  // Update label setting and regenerate preview
+  const updateLabelSetting = (labelType, key, value) => {
+    const newSettings = {
+      ...templateForm.label_settings,
+      [labelType]: {
+        ...templateForm.label_settings[labelType],
+        [key]: value
+      }
+    };
+    setTemplateForm(prev => ({ ...prev, label_settings: newSettings }));
+    
+    // Regenerate preview after a short delay
+    const previewType = labelType === 'kidLabel' ? 'kid' : labelType === 'parentLabel' ? 'parent' : 'volunteer';
+    setTimeout(() => generateLabelPreview(previewType, newSettings), 300);
+  };
+
+  // Save label settings
+  const handleSaveLabelSettings = async () => {
+    if (!labelEditorTemplate) return;
+    
+    setTemplateSaving(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/templates/${labelEditorTemplate.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          ...labelEditorTemplate,
+          label_settings: templateForm.label_settings
+        })
+      });
+      
+      if (response.ok) {
+        await fetchTemplates();
+        setShowLabelEditor(false);
+        setLabelEditorTemplate(null);
+      }
+    } catch (err) {
+      console.error('Error saving label settings:', err);
     }
     setTemplateSaving(false);
   };
@@ -3028,6 +4770,129 @@ function SettingsTab({ logo, setLogo, token }) {
         </button>
       </div>
 
+      {/* User Management */}
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">👤 Admin Users</h3>
+          <button 
+            onClick={() => {
+              setUserForm({ username: '', password: '', role: 'admin' });
+              setUserError('');
+              setShowUserModal(true);
+            }}
+            className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
+          >
+            + Add User
+          </button>
+        </div>
+        <p className="text-slate-400 text-sm mb-4">
+          Manage admin accounts that can access this dashboard.
+        </p>
+        <div className="space-y-3">
+          {users.length === 0 ? (
+            <p className="text-slate-400 text-center py-4">No additional users. Only the master admin account exists.</p>
+          ) : (
+            users.map((user) => (
+              <div key={user.id} className="flex items-center justify-between bg-slate-700 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-600 rounded-full flex items-center justify-center text-white font-bold">
+                    {user.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <span className="text-white font-medium">{user.username}</span>
+                    <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                      user.role === 'superadmin' 
+                        ? 'bg-purple-500/20 text-purple-300' 
+                        : 'bg-emerald-500/20 text-emerald-300'
+                    }`}>
+                      {user.role === 'superadmin' ? 'Super Admin' : 'Admin'}
+                    </span>
+                  </div>
+                </div>
+                {user.role !== 'superadmin' && (
+                  <button 
+                    onClick={() => handleDeleteUser(user.id)}
+                    className="text-red-400 hover:text-red-300 text-sm"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* User Modal */}
+      {showUserModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md border border-slate-700">
+            <h3 className="text-xl font-bold text-white mb-4">Add New Admin User</h3>
+            
+            {userError && (
+              <div className="bg-red-500/10 border border-red-500/50 rounded-lg px-4 py-3 mb-4 text-red-400 text-sm">
+                {userError}
+              </div>
+            )}
+            
+            <div className="mb-4">
+              <label className="block text-slate-300 mb-2">Username *</label>
+              <input
+                type="text"
+                value={userForm.username}
+                onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+                placeholder="Enter username"
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-slate-300 mb-2">Password *</label>
+              <input
+                type="password"
+                value={userForm.password}
+                onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                placeholder="Minimum 6 characters"
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-slate-300 mb-2">Role</label>
+              <select
+                value={userForm.role}
+                onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500"
+              >
+                <option value="admin">Admin</option>
+                <option value="readonly">Read Only</option>
+              </select>
+              <p className="text-slate-500 text-xs mt-1">Admins can manage all settings. Read-only users can only view data.</p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowUserModal(false);
+                  setUserForm({ username: '', password: '', role: 'admin' });
+                  setUserError('');
+                }}
+                className="flex-1 px-4 py-3 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddUser}
+                disabled={userSaving}
+                className="flex-1 px-4 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
+              >
+                {userSaving ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rooms */}
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -3150,7 +5015,9 @@ function SettingsTab({ logo, setLogo, token }) {
           </button>
         </div>
         <p className="text-slate-400 text-sm mb-4">
-          Templates define which rooms are available during different events. Only one template can be active at a time.
+          Templates define which rooms are available during different events. 
+          <span className="text-emerald-400"> Templates automatically activate based on their day and time settings!</span> 
+          You can also manually activate a template to override auto-scheduling.
         </p>
         <div className="space-y-3">
           {templates.length === 0 ? (
@@ -3188,6 +5055,9 @@ function SettingsTab({ logo, setLogo, token }) {
                     {template.track_streaks && (
                       <span className="text-orange-400">🔥 Streaks ({template.streak_reset_days}d)</span>
                     )}
+                    {template.print_volunteer_badges !== false && (
+                      <span className="text-indigo-400">🏷️ Vol. badges</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
@@ -3213,6 +5083,12 @@ function SettingsTab({ logo, setLogo, token }) {
                     Edit
                   </button>
                   <button 
+                    onClick={() => handleOpenLabelEditor(template)}
+                    className="text-indigo-400 hover:text-indigo-300 text-sm"
+                  >
+                    🏷️ Labels
+                  </button>
+                  <button 
                     onClick={() => handleDeleteTemplate(template.id)}
                     className="text-red-400 hover:text-red-300 text-sm"
                   >
@@ -3224,6 +5100,392 @@ function SettingsTab({ logo, setLogo, token }) {
           )}
         </div>
       </div>
+
+      {/* Label Editor Modal */}
+      {showLabelEditor && labelEditorTemplate && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl w-full max-w-6xl border border-slate-700 max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Label Designer</h3>
+                <p className="text-slate-400 text-sm">Customize labels for: {labelEditorTemplate.name}</p>
+              </div>
+              <button 
+                onClick={() => { setShowLabelEditor(false); setLabelEditorTemplate(null); }}
+                className="text-slate-400 hover:text-white text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 overflow-hidden flex">
+              {/* Left: Settings */}
+              <div className="w-1/2 border-r border-slate-700 overflow-y-auto p-4">
+                {/* Label Type Tabs */}
+                <div className="flex gap-2 mb-6">
+                  {[
+                    { id: 'kid', label: '👶 Kid Label', key: 'kidLabel' },
+                    { id: 'parent', label: '👨‍👩‍👧 Parent Receipt', key: 'parentLabel' },
+                    { id: 'volunteer', label: '🙋 Volunteer Badge', key: 'volunteerLabel' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setLabelPreviewType(tab.id); generateLabelPreview(tab.id); }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        labelPreviewType === tab.id
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Kid Label Settings */}
+                {labelPreviewType === 'kid' && templateForm.label_settings?.kidLabel && (
+                  <div className="space-y-4">
+                    <h4 className="text-white font-semibold mb-3">Kid Check-in Label</h4>
+                    
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={templateForm.label_settings.kidLabel.enabled}
+                        onChange={(e) => updateLabelSetting('kidLabel', 'enabled', e.target.checked)}
+                        className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-emerald-500"
+                      />
+                      <span className="text-white">Print kid labels</span>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key: 'showAvatar', label: 'Show Avatar' },
+                        { key: 'showName', label: 'Show Name' },
+                        { key: 'showRoom', label: 'Show Room' },
+                        { key: 'showStreak', label: 'Show Streak' },
+                        { key: 'showBadges', label: 'Show Badges' },
+                        { key: 'showRank', label: 'Show Rank' },
+                        { key: 'showPickupCode', label: 'Show Pickup Code' },
+                        { key: 'showAllergies', label: 'Show Allergies' },
+                        { key: 'showDate', label: 'Show Date' },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={templateForm.label_settings.kidLabel[key]}
+                            onChange={(e) => updateLabelSetting('kidLabel', key, e.target.checked)}
+                            className="w-4 h-4 rounded bg-slate-700 border-slate-600 text-emerald-500"
+                          />
+                          <span className="text-slate-300">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Name Size</label>
+                        <input
+                          type="range"
+                          min="60"
+                          max="150"
+                          value={templateForm.label_settings.kidLabel.nameSize}
+                          onChange={(e) => updateLabelSetting('kidLabel', 'nameSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.kidLabel.nameSize}px</span>
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Room Size</label>
+                        <input
+                          type="range"
+                          min="24"
+                          max="80"
+                          value={templateForm.label_settings.kidLabel.roomSize}
+                          onChange={(e) => updateLabelSetting('kidLabel', 'roomSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.kidLabel.roomSize}px</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 text-sm mb-1">Accent Color</label>
+                      <div className="flex gap-2">
+                        {['#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#EF4444'].map(color => (
+                          <button
+                            key={color}
+                            onClick={() => updateLabelSetting('kidLabel', 'accentColor', color)}
+                            className={`w-8 h-8 rounded-full border-2 ${
+                              templateForm.label_settings.kidLabel.accentColor === color 
+                                ? 'border-white scale-110' 
+                                : 'border-transparent'
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={templateForm.label_settings.kidLabel.accentColor}
+                          onChange={(e) => updateLabelSetting('kidLabel', 'accentColor', e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 text-sm mb-1">Border Style</label>
+                      <div className="flex gap-2">
+                        {['pointed', 'rounded', 'none'].map(style => (
+                          <button
+                            key={style}
+                            onClick={() => updateLabelSetting('kidLabel', 'borderStyle', style)}
+                            className={`px-3 py-1 rounded text-sm ${
+                              templateForm.label_settings.kidLabel.borderStyle === style
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-700 text-slate-300'
+                            }`}
+                          >
+                            {style.charAt(0).toUpperCase() + style.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Parent Label Settings */}
+                {labelPreviewType === 'parent' && templateForm.label_settings?.parentLabel && (
+                  <div className="space-y-4">
+                    <h4 className="text-white font-semibold mb-3">Parent Receipt Label</h4>
+                    
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={templateForm.label_settings.parentLabel.enabled}
+                        onChange={(e) => updateLabelSetting('parentLabel', 'enabled', e.target.checked)}
+                        className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-blue-500"
+                      />
+                      <span className="text-white">Print parent receipts</span>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key: 'showLogo', label: 'Show Logo' },
+                        { key: 'showFamilyName', label: 'Show Family Name' },
+                        { key: 'showChildren', label: 'Show Children' },
+                        { key: 'showPickupCodes', label: 'Show Pickup Codes' },
+                        { key: 'showRooms', label: 'Show Rooms' },
+                        { key: 'showDate', label: 'Show Date' },
+                        { key: 'showTime', label: 'Show Time' },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={templateForm.label_settings.parentLabel[key]}
+                            onChange={(e) => updateLabelSetting('parentLabel', key, e.target.checked)}
+                            className="w-4 h-4 rounded bg-slate-700 border-slate-600 text-blue-500"
+                          />
+                          <span className="text-slate-300">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Title Size</label>
+                        <input
+                          type="range"
+                          min="32"
+                          max="72"
+                          value={templateForm.label_settings.parentLabel.titleSize}
+                          onChange={(e) => updateLabelSetting('parentLabel', 'titleSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.parentLabel.titleSize}px</span>
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Name Size</label>
+                        <input
+                          type="range"
+                          min="24"
+                          max="60"
+                          value={templateForm.label_settings.parentLabel.nameSize}
+                          onChange={(e) => updateLabelSetting('parentLabel', 'nameSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.parentLabel.nameSize}px</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 text-sm mb-1">Accent Color</label>
+                      <div className="flex gap-2">
+                        {['#3B82F6', '#10B981', '#8B5CF6', '#EC4899', '#F59E0B', '#EF4444'].map(color => (
+                          <button
+                            key={color}
+                            onClick={() => updateLabelSetting('parentLabel', 'accentColor', color)}
+                            className={`w-8 h-8 rounded-full border-2 ${
+                              templateForm.label_settings.parentLabel.accentColor === color 
+                                ? 'border-white scale-110' 
+                                : 'border-transparent'
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={templateForm.label_settings.parentLabel.accentColor}
+                          onChange={(e) => updateLabelSetting('parentLabel', 'accentColor', e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Volunteer Label Settings */}
+                {labelPreviewType === 'volunteer' && templateForm.label_settings?.volunteerLabel && (
+                  <div className="space-y-4">
+                    <h4 className="text-white font-semibold mb-3">Volunteer Badge Label</h4>
+                    
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={templateForm.label_settings.volunteerLabel.enabled}
+                        onChange={(e) => updateLabelSetting('volunteerLabel', 'enabled', e.target.checked)}
+                        className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-indigo-500"
+                      />
+                      <span className="text-white">Print volunteer badges</span>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key: 'showInitials', label: 'Show Initials Box' },
+                        { key: 'showName', label: 'Show Name' },
+                        { key: 'showServiceArea', label: 'Show Service Area' },
+                        { key: 'showDate', label: 'Show Date' },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={templateForm.label_settings.volunteerLabel[key]}
+                            onChange={(e) => updateLabelSetting('volunteerLabel', key, e.target.checked)}
+                            className="w-4 h-4 rounded bg-slate-700 border-slate-600 text-indigo-500"
+                          />
+                          <span className="text-slate-300">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="space-y-3 mt-4">
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Name Size</label>
+                        <input
+                          type="range"
+                          min="80"
+                          max="200"
+                          value={templateForm.label_settings.volunteerLabel.nameSize}
+                          onChange={(e) => updateLabelSetting('volunteerLabel', 'nameSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.volunteerLabel.nameSize}px</span>
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Service Area Size</label>
+                        <input
+                          type="range"
+                          min="32"
+                          max="100"
+                          value={templateForm.label_settings.volunteerLabel.serviceAreaSize}
+                          onChange={(e) => updateLabelSetting('volunteerLabel', 'serviceAreaSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.volunteerLabel.serviceAreaSize}px</span>
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-sm mb-1">Date Size</label>
+                        <input
+                          type="range"
+                          min="24"
+                          max="72"
+                          value={templateForm.label_settings.volunteerLabel.dateSize}
+                          onChange={(e) => updateLabelSetting('volunteerLabel', 'dateSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <span className="text-slate-500 text-xs">{templateForm.label_settings.volunteerLabel.dateSize}px</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 text-sm mb-1">Accent Color</label>
+                      <div className="flex gap-2">
+                        {['#4F46E5', '#10B981', '#3B82F6', '#EC4899', '#F59E0B', '#EF4444'].map(color => (
+                          <button
+                            key={color}
+                            onClick={() => updateLabelSetting('volunteerLabel', 'accentColor', color)}
+                            className={`w-8 h-8 rounded-full border-2 ${
+                              templateForm.label_settings.volunteerLabel.accentColor === color 
+                                ? 'border-white scale-110' 
+                                : 'border-transparent'
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={templateForm.label_settings.volunteerLabel.accentColor}
+                          onChange={(e) => updateLabelSetting('volunteerLabel', 'accentColor', e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Preview */}
+              <div className="w-1/2 p-4 bg-slate-900 flex flex-col">
+                <h4 className="text-white font-semibold mb-3">Preview</h4>
+                <div className="flex-1 flex items-center justify-center bg-white rounded-lg p-4 overflow-hidden">
+                  {labelPreviewLoading ? (
+                    <div className="text-slate-500">Generating preview...</div>
+                  ) : labelPreviewUrl ? (
+                    <img 
+                      src={labelPreviewUrl} 
+                      alt="Label Preview" 
+                      className="max-w-full max-h-full object-contain shadow-lg"
+                    />
+                  ) : (
+                    <div className="text-slate-500">Click a label type to preview</div>
+                  )}
+                </div>
+                <p className="text-slate-500 text-xs mt-2 text-center">
+                  Dymo 30256 Shipping Labels - 4" × 2.31"
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-700 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowLabelEditor(false); setLabelEditorTemplate(null); }}
+                className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveLabelSettings}
+                disabled={templateSaving}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {templateSaving ? 'Saving...' : 'Save Label Settings'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Template Modal */}
       {showTemplateModal && (
@@ -3340,6 +5602,22 @@ function SettingsTab({ logo, setLogo, token }) {
               )}
             </div>
 
+            {/* Volunteer Badge Printing Toggle */}
+            <div className="mb-6 bg-slate-700/50 rounded-lg p-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={templateForm.print_volunteer_badges !== false}
+                  onChange={(e) => setTemplateForm({ ...templateForm, print_volunteer_badges: e.target.checked })}
+                  className="w-5 h-5 rounded bg-slate-700 border-slate-600 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-800"
+                />
+                <span className="text-white font-medium">🏷️ Print volunteer badges</span>
+              </label>
+              <p className="text-slate-400 text-sm mt-2 ml-8">
+                When enabled, volunteers will receive a printed name badge when they check in.
+              </p>
+            </div>
+
             <div className="mb-6">
               <label className="block text-slate-300 mb-2">Available Rooms</label>
               <div className="bg-slate-700 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
@@ -3402,6 +5680,52 @@ function SettingsTab({ logo, setLogo, token }) {
           </div>
         </div>
       )}
+
+      {/* Software Downloads */}
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+        <h3 className="text-lg font-semibold text-white mb-4">📥 Software Downloads</h3>
+        <p className="text-slate-400 text-sm mb-4">
+          Download the check-in kiosk software for local installation. Requires Dymo LabelWriter for printing.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-slate-700 rounded-lg p-4 text-center">
+            <div className="text-4xl mb-2">🍎</div>
+            <h4 className="text-white font-medium mb-1">macOS (Apple Silicon)</h4>
+            <p className="text-slate-400 text-xs mb-3">For M1/M2/M3 Macs</p>
+            <a 
+              href="/downloads/Adventure Kids Check-In-1.0.0-arm64.dmg"
+              className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
+            >
+              Download DMG
+            </a>
+          </div>
+          <div className="bg-slate-700 rounded-lg p-4 text-center">
+            <div className="text-4xl mb-2">🍏</div>
+            <h4 className="text-white font-medium mb-1">macOS (Intel)</h4>
+            <p className="text-slate-400 text-xs mb-3">For older Intel Macs</p>
+            <a 
+              href="/downloads/Adventure Kids Check-In-1.0.0.dmg"
+              className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
+            >
+              Download DMG
+            </a>
+          </div>
+          <div className="bg-slate-700 rounded-lg p-4 text-center">
+            <div className="text-4xl mb-2">🪟</div>
+            <h4 className="text-white font-medium mb-1">Windows</h4>
+            <p className="text-slate-400 text-xs mb-3">Windows 10/11 (64-bit)</p>
+            <a 
+              href="/downloads/Adventure Kids Check-In Setup 1.0.0.exe"
+              className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
+            >
+              Download EXE
+            </a>
+          </div>
+        </div>
+        <p className="text-slate-500 text-xs mt-4 text-center">
+          Version 1.0.0 • The software will sync with your database automatically.
+        </p>
+      </div>
 
       {/* Printer Settings */}
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
@@ -3518,7 +5842,7 @@ export default function Admin() {
         {activeTab === 'families' && <FamiliesTab token={token} />}
         {activeTab === 'volunteers' && <VolunteersTab token={token} />}
         {activeTab === 'rewards' && <RewardsTab token={token} />}
-        {activeTab === 'attendance' && <AttendanceTab token={token} />}
+        {activeTab === 'reports' && <ReportsTab token={token} />}
         {activeTab === 'settings' && <SettingsTab logo={logo} setLogo={setLogo} token={token} />}
       </main>
     </div>

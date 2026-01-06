@@ -19,16 +19,20 @@ export default function Register() {
     phone: '',
     parentName: '',
     email: '',
+    address: '',
     children: [{ firstName: '', lastName: '', birthday: '', gender: '', allergies: '', notes: '', avatar: DEFAULT_AVATAR, pin: '' }]
   });
   
   // Generate PIN from birthday (MMDDYY format)
   const generatePinFromBirthday = (birthday) => {
     if (!birthday) return '';
-    const date = new Date(birthday);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
+    // Parse the date string directly to avoid timezone issues
+    // birthday format is YYYY-MM-DD from the date input
+    const parts = birthday.split('-');
+    if (parts.length !== 3) return '';
+    const year = parts[0].slice(-2); // Last 2 digits of year
+    const month = parts[1];
+    const day = parts[2];
     return `${month}${day}${year}`;
   };
   
@@ -47,6 +51,8 @@ export default function Register() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [phoneExists, setPhoneExists] = useState(false);
+  const [checkingPhone, setCheckingPhone] = useState(false);
 
   const addChild = () => {
     setFamily(prev => ({
@@ -72,6 +78,46 @@ export default function Register() {
         ...prev,
         children: prev.children.filter((_, i) => i !== index)
       }));
+    }
+  };
+
+  // Check if phone number already exists in the system
+  const checkPhoneExists = async () => {
+    if (!family.phone || family.phone.length < 10) {
+      return false;
+    }
+    
+    setCheckingPhone(true);
+    setPhoneExists(false);
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/family/lookup?phone=${encodeURIComponent(family.phone)}`);
+      const data = await response.json();
+      
+      if (response.ok && data.family) {
+        setPhoneExists(true);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Phone check error:', err);
+      return false;
+    } finally {
+      setCheckingPhone(false);
+    }
+  };
+
+  // Handle continuing from step 1
+  const handleStep1Continue = async () => {
+    if (!family.phone || !family.parentName || !family.email) {
+      setError('Please fill in all fields');
+      return;
+    }
+    
+    const exists = await checkPhoneExists();
+    if (!exists) {
+      setPhoneExists(false);
+      setStep(2);
     }
   };
 
@@ -104,6 +150,7 @@ export default function Register() {
           name: familyName,
           phone: family.phone,
           email: family.email,
+          address: family.address,
           parentName: family.parentName,
           children: family.children.map(c => ({
             firstName: c.firstName,
@@ -189,15 +236,48 @@ export default function Register() {
             <div className="bg-white rounded-2xl p-6 shadow-xl">
               <h2 className="text-xl font-bold text-gray-900 mb-6">Parent/Guardian Info</h2>
               
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-red-600 text-sm">
+                  {error}
+                </div>
+              )}
+
+              {/* Phone Already Exists Message */}
+              {phoneExists && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">👋</span>
+                    <div>
+                      <p className="font-semibold text-amber-800 mb-1">Welcome back!</p>
+                      <p className="text-amber-700 text-sm mb-3">
+                        This phone number is already registered. You can check in your kids at the kiosk!
+                      </p>
+                      <a
+                        href="/"
+                        className="inline-block px-4 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 transition-colors text-sm"
+                      >
+                        Go to Check-In →
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                   <input
                     type="tel"
                     value={family.phone}
-                    onChange={(e) => setFamily(prev => ({ ...prev, phone: e.target.value }))}
+                    onChange={(e) => {
+                      setFamily(prev => ({ ...prev, phone: e.target.value }));
+                      setPhoneExists(false); // Reset when phone changes
+                      setError('');
+                    }}
                     placeholder="(555) 123-4567"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg"
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg ${
+                      phoneExists ? 'border-amber-400 bg-amber-50' : 'border-gray-300'
+                    }`}
                     required
                     autoComplete="tel"
                   />
@@ -229,14 +309,29 @@ export default function Register() {
                     autoComplete="email"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mailing Address <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <textarea
+                    value={family.address || ''}
+                    onChange={(e) => setFamily(prev => ({ ...prev, address: e.target.value }))}
+                    placeholder="123 Main Street&#10;City, State ZIP"
+                    rows={2}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg resize-none"
+                    autoComplete="street-address"
+                  />
+                </div>
               </div>
 
               <button
                 type="button"
-                onClick={() => setStep(2)}
-                className="w-full mt-6 py-4 bg-emerald-500 text-white rounded-xl font-bold text-lg hover:bg-emerald-600 transition-colors"
+                onClick={handleStep1Continue}
+                disabled={checkingPhone}
+                className="w-full mt-6 py-4 bg-emerald-500 text-white rounded-xl font-bold text-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
               >
-                Continue
+                {checkingPhone ? 'Checking...' : 'Continue'}
               </button>
             </div>
           )}
