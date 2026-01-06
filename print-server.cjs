@@ -663,6 +663,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // Database sync - upload database from local to cloud
+// Note: This writes the database file and requires a server restart to take effect
 app.post('/api/admin/sync-database', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   
@@ -679,18 +680,22 @@ app.post('/api/admin/sync-database', (req, res) => {
     // Decode base64 database
     const dbBuffer = Buffer.from(database, 'base64');
     
-    // Close current database connection
-    db.close();
+    // Write new database to a temp file first
+    const tempPath = DB_PATH + '.new';
+    fs.writeFileSync(tempPath, dbBuffer);
     
-    // Write new database
-    fs.writeFileSync(DB_PATH, dbBuffer);
+    // Rename to replace (atomic on most systems)
+    fs.renameSync(tempPath, DB_PATH);
     
-    // Reopen database
-    const Database = require('better-sqlite3');
-    global.db = new Database(DB_PATH);
+    console.log('Database file updated, size:', dbBuffer.length);
+    console.log('Server will restart to load new database...');
     
-    console.log('Database synced successfully, size:', dbBuffer.length);
-    res.json({ success: true, message: 'Database synced successfully', size: dbBuffer.length });
+    res.json({ success: true, message: 'Database synced successfully. Server restarting...', size: dbBuffer.length });
+    
+    // Exit process so Render restarts it with new database
+    setTimeout(() => {
+      process.exit(0);
+    }, 500);
   } catch (err) {
     console.error('Database sync error:', err);
     res.status(500).json({ error: err.message });
