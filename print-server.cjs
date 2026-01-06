@@ -662,6 +662,59 @@ app.post('/api/auth/login', (req, res) => {
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
+// Database sync - upload database from local to cloud
+app.post('/api/admin/sync-database', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const { database } = req.body;
+    if (!database) {
+      return res.status(400).json({ error: 'No database data provided' });
+    }
+    
+    // Decode base64 database
+    const dbBuffer = Buffer.from(database, 'base64');
+    
+    // Close current database connection
+    db.close();
+    
+    // Write new database
+    fs.writeFileSync(DB_PATH, dbBuffer);
+    
+    // Reopen database
+    const Database = require('better-sqlite3');
+    global.db = new Database(DB_PATH);
+    
+    console.log('Database synced successfully, size:', dbBuffer.length);
+    res.json({ success: true, message: 'Database synced successfully', size: dbBuffer.length });
+  } catch (err) {
+    console.error('Database sync error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download database backup
+app.get('/api/admin/backup-database', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const dbBuffer = fs.readFileSync(DB_PATH);
+    const base64 = dbBuffer.toString('base64');
+    res.json({ success: true, database: base64, size: dbBuffer.length });
+  } catch (err) {
+    console.error('Database backup error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Verify token
 app.get('/api/auth/verify', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
