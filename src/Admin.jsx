@@ -1502,7 +1502,7 @@ function FamiliesTab({ token }) {
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-white">Families</h2>
+        <h2 className="text-2xl font-bold text-white">Families</h2>
           <p className="text-slate-400 text-sm">{families.length} families registered</p>
         </div>
         <div className="flex gap-2">
@@ -1613,15 +1613,18 @@ function FamiliesTab({ token }) {
                     <td className="px-6 py-4 text-slate-300">{formatPhone(family.phone)}</td>
                   <td className="px-6 py-4">
                       <div className="flex gap-1">
-                        {family.children?.map((child) => (
-                          <img 
-                            key={child.id}
-                            src={getAvatarUrl()} 
-                            alt={child.name}
-                            title={child.name}
-                            className="w-8 h-8 rounded-full bg-slate-600"
-                          />
-                        ))}
+                        {family.children?.map((child) => {
+                          const initials = (child.first_name?.[0] || '') + (child.last_name?.[0] || child.name?.[0] || '');
+                          return (
+                            <div 
+                              key={child.id}
+                              title={child.name}
+                              className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold"
+                            >
+                              {initials.toUpperCase()}
+                            </div>
+                          );
+                      })}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-slate-300">{familyCheckins}</td>
@@ -2524,30 +2527,30 @@ ${row.map((cell, i) => `<Cell><Data ss:Type="${i === 2 ? 'Number' : 'String'}">$
         </div>
       ) : (
         /* Table View */
-        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-700">
-              <tr>
-                <th className="text-left text-slate-300 px-6 py-4 font-semibold">Date</th>
+      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-slate-700">
+            <tr>
+              <th className="text-left text-slate-300 px-6 py-4 font-semibold">Date</th>
                 <th className="text-left text-slate-300 px-6 py-4 font-semibold">Day</th>
-                <th className="text-left text-slate-300 px-6 py-4 font-semibold">Check-ins</th>
-              </tr>
-            </thead>
-            <tbody>
+              <th className="text-left text-slate-300 px-6 py-4 font-semibold">Check-ins</th>
+            </tr>
+          </thead>
+          <tbody>
               {attendance.map((record, i) => {
                 const date = new Date(record.date);
                 const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-                return (
-                  <tr key={i} className="border-t border-slate-700 hover:bg-slate-700/50">
-                    <td className="px-6 py-4 text-white font-medium">{record.date}</td>
+              return (
+                <tr key={i} className="border-t border-slate-700 hover:bg-slate-700/50">
+                  <td className="px-6 py-4 text-white font-medium">{record.date}</td>
                     <td className="px-6 py-4 text-slate-300">{dayName}</td>
-                    <td className="px-6 py-4 text-emerald-400 font-semibold">{record.count}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  <td className="px-6 py-4 text-emerald-400 font-semibold">{record.count}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       )}
     </div>
   );
@@ -3256,19 +3259,6 @@ function VolunteersTab({ token }) {
                 maxLength={6}
                 className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white font-mono"
               />
-            </div>
-
-            {/* Avatar Preview */}
-            <div className="mb-4">
-              <label className="block text-slate-400 text-sm mb-2">Avatar</label>
-              <div className="flex items-center gap-4">
-                <img
-                  src={getAvatarUrl()}
-                  alt=""
-                  className="w-16 h-16 rounded-xl"
-                />
-                <p className="text-slate-400 text-sm">Explorer avatar (more options coming soon!)</p>
-              </div>
             </div>
 
             <div className="flex gap-3">
@@ -4797,7 +4787,7 @@ function SettingsTab({ logo, setLogo, token }) {
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-slate-600 rounded-full flex items-center justify-center text-white font-bold">
                     {user.username.charAt(0).toUpperCase()}
-                  </div>
+          </div>
                   <div>
                     <span className="text-white font-medium">{user.username}</span>
                     <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
@@ -4807,8 +4797,8 @@ function SettingsTab({ logo, setLogo, token }) {
                     }`}>
                       {user.role === 'superadmin' ? 'Super Admin' : 'Admin'}
                     </span>
-                  </div>
-                </div>
+          </div>
+          </div>
                 {user.role !== 'superadmin' && (
                   <button 
                     onClick={() => handleDeleteUser(user.id)}
@@ -4817,7 +4807,7 @@ function SettingsTab({ logo, setLogo, token }) {
                     Delete
                   </button>
                 )}
-              </div>
+          </div>
             ))
           )}
         </div>
