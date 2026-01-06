@@ -628,20 +628,45 @@
         </p>
         <button class="btn btn-outline" onclick="changeServer()">Change Server</button>
       </div>
+      
+      <div class="data-section">
+        <div class="data-header">
+          <h3 class="data-title">Database Sync</h3>
+        </div>
+        <p style="color: var(--gray); margin-bottom: 1rem;">
+          Upload your local database to sync data to the cloud server.
+        </p>
+        <input type="file" id="dbFileInput" accept=".db" style="display: none;" onchange="uploadDatabase(event)">
+        <button class="btn btn-primary" onclick="document.getElementById('dbFileInput').click()">
+          📤 Upload Local Database
+        </button>
+        <button class="btn btn-outline" onclick="downloadDatabase()" style="margin-left: 1rem;">
+          📥 Download Backup
+        </button>
+        <div id="syncStatus" style="margin-top: 1rem; color: var(--gray);"></div>
+      </div>
     </div>
   </main>
 
   <script>
     // Check authentication
     const session = localStorage.getItem('churchcheck_session');
-    const user = JSON.parse(localStorage.getItem('churchcheck_user') || '{}');
+    let user = {};
+    try {
+      const userStr = localStorage.getItem('churchcheck_user');
+      if (userStr && userStr !== 'undefined') {
+        user = JSON.parse(userStr);
+      }
+    } catch (e) {
+      console.error('Error parsing user:', e);
+    }
     
     if (!session) {
       window.location.href = 'admin.html';
     }
     
     // Display user info
-    if (user.username) {
+    if (user && user.username) {
       document.getElementById('userName').textContent = user.username;
       document.getElementById('userAvatar').textContent = user.username.charAt(0).toUpperCase();
     }
@@ -656,18 +681,34 @@
     
     // Fetch with auth
     async function fetchWithAuth(endpoint) {
-      const response = await fetch(`${getApiBase()}${endpoint}`, {
-        headers: {
-          'Authorization': `Bearer ${session}`
+      try {
+        const response = await fetch(`${getApiBase()}${endpoint}`, {
+          headers: {
+            'Authorization': `Bearer ${session}`
+          }
+        });
+        
+        if (response.status === 401) {
+          logout();
+          return null;
         }
-      });
-      
-      if (response.status === 401) {
-        logout();
+        
+        if (!response.ok) {
+          console.error(`API error: ${response.status} for ${endpoint}`);
+          return null;
+        }
+        
+        const text = await response.text();
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error('Invalid JSON response:', text.substring(0, 100));
+          return null;
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
         return null;
       }
-      
-      return response.json();
     }
     
     // Tab navigation
@@ -687,41 +728,54 @@
     
     // Load dashboard data
     async function loadDashboard() {
+      console.log('Loading dashboard data...');
+      console.log('API Base:', getApiBase());
+      
       try {
         // Load stats
+        console.log('Fetching families...');
         const families = await fetchWithAuth('/api/families');
-        const volunteers = await fetchWithAuth('/api/volunteers');
-        const checkins = await fetchWithAuth('/api/checkins/today');
+        console.log('Families:', families);
         
+        console.log('Fetching volunteers...');
+        const volunteers = await fetchWithAuth('/api/volunteers');
+        console.log('Volunteers:', volunteers);
+        
+        console.log('Fetching checkins...');
+        const checkins = await fetchWithAuth('/api/checkins/today');
+        console.log('Checkins:', checkins);
+        
+        // Update stats
+        document.getElementById('statFamilies').textContent = families ? families.length : 0;
+        document.getElementById('statVolunteers').textContent = volunteers ? volunteers.length : 0;
+        document.getElementById('statCheckins').textContent = checkins ? checkins.length : 0;
+        
+        // Count children
+        let childCount = 0;
         if (families) {
-          document.getElementById('statFamilies').textContent = families.length;
-          
-          // Count children
-          let childCount = 0;
           families.forEach(f => {
             if (f.children) childCount += f.children.length;
           });
-          document.getElementById('statChildren').textContent = childCount;
         }
+        document.getElementById('statChildren').textContent = childCount;
         
-        if (volunteers) {
-          document.getElementById('statVolunteers').textContent = volunteers.length;
-        }
+        // Render checkins
+        renderRecentCheckins(checkins || []);
         
-        if (checkins) {
-          document.getElementById('statCheckins').textContent = checkins.length;
-          renderRecentCheckins(checkins);
-        } else {
-          document.getElementById('statCheckins').textContent = '0';
-          document.getElementById('recentCheckins').innerHTML = `
-            <div class="empty-state">
-              <div class="empty-state-icon">📋</div>
-              <p>No check-ins today yet</p>
-            </div>
-          `;
-        }
+        console.log('Dashboard loaded successfully');
       } catch (err) {
         console.error('Error loading dashboard:', err);
+        // Still update UI to show 0s instead of spinning
+        document.getElementById('statFamilies').textContent = '0';
+        document.getElementById('statChildren').textContent = '0';
+        document.getElementById('statVolunteers').textContent = '0';
+        document.getElementById('statCheckins').textContent = '0';
+        document.getElementById('recentCheckins').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <p>Error loading data. Check console for details.</p>
+          </div>
+        `;
       }
     }
     
@@ -892,6 +946,99 @@
     // Change server
     function changeServer() {
       window.location.href = 'admin.html';
+    }
+    
+    // Upload database
+    async function uploadDatabase(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const statusEl = document.getElementById('syncStatus');
+      statusEl.innerHTML = '⏳ Uploading database... (this may take a moment)';
+      
+      try {
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+          const arrayBuffer = e.target.result;
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = btoa(binary);
+          
+          console.log('Database size:', bytes.byteLength, 'bytes');
+          console.log('Session token:', session);
+          
+          try {
+            const response = await fetch(`${getApiBase()}/api/admin/sync-database`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session}`
+              },
+              body: JSON.stringify({ database: base64 })
+            });
+            
+            const data = await response.json();
+            console.log('Sync response:', data);
+            
+            if (data.success) {
+              statusEl.innerHTML = `✅ Database synced successfully! (${(data.size / 1024).toFixed(1)} KB)`;
+              // Reload dashboard data
+              setTimeout(() => {
+                loadDashboard();
+              }, 1000);
+            } else {
+              if (data.error === 'Unauthorized') {
+                statusEl.innerHTML = `❌ Session expired. <a href="admin.html" style="color: var(--accent);">Please log in again</a>`;
+              } else {
+                statusEl.innerHTML = `❌ Error: ${data.error}`;
+              }
+            }
+          } catch (err) {
+            console.error('Upload error:', err);
+            statusEl.innerHTML = `❌ Upload failed: ${err.message}`;
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } catch (err) {
+        statusEl.innerHTML = `❌ Error reading file: ${err.message}`;
+      }
+    }
+    
+    // Download database backup
+    async function downloadDatabase() {
+      const statusEl = document.getElementById('syncStatus');
+      statusEl.innerHTML = '⏳ Downloading backup...';
+      
+      try {
+        const response = await fetch(`${getApiBase()}/api/admin/backup-database`, {
+          headers: {
+            'Authorization': `Bearer ${session}`
+          }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Create download link
+          const blob = new Blob([Uint8Array.from(atob(data.database), c => c.charCodeAt(0))], { type: 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `churchcheck-backup-${new Date().toISOString().split('T')[0]}.db`;
+          a.click();
+          URL.revokeObjectURL(url);
+          
+          statusEl.innerHTML = `✅ Backup downloaded! (${(data.size / 1024).toFixed(1)} KB)`;
+        } else {
+          statusEl.innerHTML = `❌ Error: ${data.error}`;
+        }
+      } catch (err) {
+        statusEl.innerHTML = `❌ Download failed: ${err.message}`;
+      }
     }
     
     // Logout

@@ -166,7 +166,7 @@ const WelcomeScreen = ({ onFamilyLogin, onKidLogin }) => (
           className="group relative px-12 py-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl text-xl font-bold text-indigo-900 shadow-2xl shadow-orange-500/40 hover:shadow-orange-500/60 transition-all duration-300 hover:scale-105 active:scale-95"
         >
           <span className="text-3xl mb-1 block">📱</span>
-          <span className="relative z-10">Parent Phone</span>
+          <span className="relative z-10">Phone Number</span>
         </button>
         
         <button
@@ -674,6 +674,152 @@ const NotFoundScreen = ({ phone, onBack, onTryAgain }) => {
   );
 };
 
+// Volunteer Check-in Screen
+const VolunteerCheckinScreen = ({ volunteer, onCheckIn, onBack, activeTemplate }) => {
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [rooms, setRooms] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch rooms based on active template
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        const roomsResponse = await fetch(`${API_BASE}/api/rooms`);
+        const allRooms = await roomsResponse.json();
+        
+        if (activeTemplate && activeTemplate.room_ids && activeTemplate.room_ids.length > 0) {
+          const templateRooms = allRooms.filter(room => 
+            activeTemplate.room_ids.includes(room.id)
+          );
+          setRooms(templateRooms.length > 0 ? templateRooms : allRooms);
+        } else {
+          setRooms(allRooms);
+        }
+      } catch (err) {
+        console.error('Error fetching rooms:', err);
+        setRooms([]);
+      }
+      setLoading(false);
+    };
+    fetchRooms();
+  }, [activeTemplate]);
+
+  // Auto-select room based on service area if available
+  useEffect(() => {
+    if (rooms.length > 0 && !selectedRoom) {
+      // Try to match service area to a room
+      if (volunteer.volunteerDetails?.serviceArea) {
+        const matchingRoom = rooms.find(r => 
+          r.name.toLowerCase().includes(volunteer.volunteerDetails.serviceArea.toLowerCase())
+        );
+        if (matchingRoom) {
+          setSelectedRoom(matchingRoom.id);
+          return;
+        }
+      }
+      // Default to first room
+      setSelectedRoom(rooms[0]?.id);
+    }
+  }, [rooms, volunteer.volunteerDetails?.serviceArea, selectedRoom]);
+
+  const handleCheckIn = () => {
+    const room = rooms.find(r => r.id === selectedRoom);
+    onCheckIn({
+      ...volunteer,
+      room: room?.name || 'Main Area',
+      isVolunteer: true
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+      <FloatingParticles />
+      
+      <button 
+        onClick={onBack}
+        className="absolute top-8 left-8 text-white/60 hover:text-white flex items-center gap-2 transition-colors z-20"
+      >
+        <span className="text-2xl">←</span>
+        <span>Back</span>
+      </button>
+      
+      {/* Background glow effect */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/30 rounded-full blur-3xl" />
+      
+      <div className="relative z-10 w-full max-w-lg">
+        {/* Volunteer Badge Icon */}
+        <div className="text-center mb-8">
+          <div className="relative inline-block mb-4">
+            <div className="w-40 h-40 mx-auto bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-2xl">
+              <span className="text-7xl">🙋</span>
+            </div>
+            {/* Volunteer badge */}
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-indigo-500 text-white px-4 py-1 rounded-full text-sm font-bold shadow-lg">
+              VOLUNTEER
+            </div>
+          </div>
+          
+          <h1 className="text-5xl font-black text-white mb-2 mt-6">
+            Welcome, {volunteer.firstName}! 
+          </h1>
+          <p className="text-xl text-indigo-200">Thank you for serving today!</p>
+        </div>
+        
+        {/* Service Info */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center border border-white/20">
+            <p className="text-3xl font-bold text-emerald-400">{volunteer.totalCheckins || 0}</p>
+            <p className="text-indigo-300 text-sm">Shifts Served</p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center border border-white/20">
+            <p className="text-lg font-semibold text-indigo-200">{volunteer.volunteerDetails?.serviceArea || 'Not assigned'}</p>
+            <p className="text-indigo-300 text-sm">Service Area</p>
+          </div>
+        </div>
+        
+        {/* Room Selection */}
+        {rooms.length > 0 && (
+          <div className="mb-6">
+            <p className="text-indigo-200 text-sm mb-3 text-center">Where are you serving today?</p>
+            {loading ? (
+              <p className="text-white/50 text-center">Loading rooms...</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {rooms.map(room => (
+                  <button
+                    key={room.id}
+                    onClick={() => setSelectedRoom(room.id)}
+                    className={`px-4 py-3 rounded-xl text-left transition-all ${
+                      selectedRoom === room.id
+                        ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                        : 'bg-white/10 text-white/80 hover:bg-white/20'
+                    }`}
+                  >
+                    <p className="font-semibold text-sm">{room.name}</p>
+                    {room.age_range && <p className="text-xs opacity-70">Ages {room.age_range}</p>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Check In Button */}
+        <button
+          onClick={handleCheckIn}
+          className="w-full py-5 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-2xl font-bold shadow-xl shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all hover:scale-[1.02] active:scale-[0.98]"
+        >
+          Check In & Print Badge 🏷️
+        </button>
+        
+        <p className="text-center text-indigo-300/60 text-sm mt-4">
+          A volunteer badge will be printed for you
+        </p>
+      </div>
+    </div>
+  );
+};
+
 // Child Select Screen
 const ChildSelectScreen = ({ family, onCheckIn, onBack, activeTemplate }) => {
   const [selectedChildren, setSelectedChildren] = useState([]);
@@ -766,6 +912,10 @@ const ChildSelectScreen = ({ family, onCheckIn, onBack, activeTemplate }) => {
     );
   }
 
+  // Separate kids from volunteers
+  const kids = family.children.filter(c => !c.notes || !c.notes.includes('Volunteer'));
+  const volunteers = family.children.filter(c => c.notes && c.notes.includes('Volunteer'));
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center p-8 relative">
       <FloatingParticles />
@@ -784,76 +934,158 @@ const ChildSelectScreen = ({ family, onCheckIn, onBack, activeTemplate }) => {
         </h2>
         <p className="text-indigo-300 text-center mb-10">Select who's checking in today</p>
         
-        <div className="grid gap-4">
-          {family.children.map((child, index) => {
-            const isSelected = selectedChildren.find(c => c.id === child.id);
-            return (
-              <div
-                key={child.id}
-                className={`rounded-2xl border-2 transition-all duration-300 ${
-                  isSelected 
-                    ? 'bg-green-500/20 border-green-500 shadow-lg shadow-green-500/20' 
-                    : 'bg-white/10 border-white/20'
-                }`}
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
-                <button
-                  onClick={() => toggleChild(child)}
-                  className="w-full p-6 text-left"
-                >
-                  <div className="flex items-center gap-6">
-                    <div className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
-                      isSelected ? 'bg-green-500 border-green-500' : 'border-white/40'
-                    }`}>
-                      {isSelected && <span className="text-white text-xl">✓</span>}
-                    </div>
-                    
-                    <img 
-                      src={getAvatarUrl()} 
-                      alt={child.name}
-                      className="w-28 h-28 flex-shrink-0"
-                    />
-                    
-                    <div className="flex-1">
-                      <h3 className="text-2xl font-bold text-white mb-1">{child.name}</h3>
-                      <p className="text-indigo-300">Age {child.age}</p>
-                    </div>
-                    
-                    <div className="text-right">
-                      <div className="flex items-center gap-2 text-orange-400 mb-1">
-                        <span className="text-xl">🔥</span>
-                        <span className="text-lg font-bold">{child.streak || 0} week streak</span>
+        {/* Kids Section */}
+        {kids.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-emerald-400 mb-4 flex items-center gap-2">
+              <span>👶</span> Kids Check-In
+            </h3>
+            <div className="grid gap-4">
+              {kids.map((child, index) => {
+                const isSelected = selectedChildren.find(c => c.id === child.id);
+                return (
+                  <div
+                    key={child.id}
+                    className={`rounded-2xl border-2 transition-all duration-300 ${
+                      isSelected 
+                        ? 'bg-green-500/20 border-green-500 shadow-lg shadow-green-500/20' 
+                        : 'bg-white/10 border-white/20'
+                    }`}
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <button
+                      onClick={() => toggleChild(child)}
+                      className="w-full p-6 text-left"
+                    >
+                      <div className="flex items-center gap-6">
+                        <div className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
+                          isSelected ? 'bg-green-500 border-green-500' : 'border-white/40'
+                        }`}>
+                          {isSelected && <span className="text-white text-xl">✓</span>}
+                        </div>
+                        
+                        <img 
+                          src={getAvatarUrl()} 
+                          alt={child.name}
+                          className="w-28 h-28 flex-shrink-0"
+                        />
+                        
+                        <div className="flex-1">
+                          <h3 className="text-2xl font-bold text-white mb-1">{child.name}</h3>
+                          <p className="text-indigo-300">Age {child.age}</p>
+                        </div>
+                        
+                        <div className="text-right">
+                          <div className="flex items-center gap-2 text-orange-400 mb-1">
+                            <span className="text-xl">🔥</span>
+                            <span className="text-lg font-bold">{child.streak || 0} week streak</span>
+                          </div>
+                          <p className="text-indigo-400 text-sm">{child.badges || 0} badges</p>
+                        </div>
                       </div>
-                      <p className="text-indigo-400 text-sm">{child.badges || 0} badges</p>
-                    </div>
+                    </button>
+                    
+                    {isSelected && (
+                      <div className="px-6 pb-6 pt-2 border-t border-green-500/30">
+                        <p className="text-green-300 text-sm mb-3">Select Room:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {rooms.map(room => (
+                            <button
+                              key={room.id}
+                              onClick={() => setRoom(child.id, room.id)}
+                              className={`px-4 py-3 rounded-lg text-left transition-all ${
+                                childRooms[child.id] === room.id
+                                  ? 'bg-green-500 text-white'
+                                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+                              }`}
+                            >
+                              <p className="font-semibold text-sm">{room.name}</p>
+                              {room.age_range && <p className="text-xs opacity-70">Ages {room.age_range}</p>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </button>
-                
-                {isSelected && (
-                  <div className="px-6 pb-6 pt-2 border-t border-green-500/30">
-                    <p className="text-green-300 text-sm mb-3">Select Room:</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {rooms.map(room => (
-                        <button
-                          key={room.id}
-                          onClick={() => setRoom(child.id, room.id)}
-                          className={`px-4 py-3 rounded-lg text-left transition-all ${
-                            childRooms[child.id] === room.id
-                              ? 'bg-green-500 text-white'
-                              : 'bg-white/10 text-white/80 hover:bg-white/20'
-                          }`}
-                        >
-                          <p className="font-semibold text-sm">{room.name}</p>
-                          {room.age_range && <p className="text-xs opacity-70">Ages {room.age_range}</p>}
-                        </button>
-                      ))}
-                    </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        
+        {/* Volunteers Section */}
+        {volunteers.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-indigo-400 mb-4 flex items-center gap-2">
+              <span>🙋</span> Volunteer Check-In
+            </h3>
+            <div className="grid gap-4">
+              {volunteers.map((volunteer, index) => {
+                const isSelected = selectedChildren.find(c => c.id === volunteer.id);
+                return (
+                  <div
+                    key={volunteer.id}
+                    className={`rounded-2xl border-2 transition-all duration-300 ${
+                      isSelected 
+                        ? 'bg-indigo-500/20 border-indigo-500 shadow-lg shadow-indigo-500/20' 
+                        : 'bg-white/10 border-white/20'
+                    }`}
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <button
+                      onClick={() => toggleChild({ ...volunteer, isVolunteer: true })}
+                      className="w-full p-6 text-left"
+                    >
+                      <div className="flex items-center gap-6">
+                        <div className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
+                          isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-white/40'
+                        }`}>
+                          {isSelected && <span className="text-white text-xl">✓</span>}
+                        </div>
+                        
+                        {/* Volunteer icon instead of avatar */}
+                        <div className="w-28 h-28 flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                          <span className="text-5xl">🙋</span>
+                        </div>
+                        
+                        <div className="flex-1">
+                          <h3 className="text-2xl font-bold text-white mb-1">{volunteer.name}</h3>
+                          <span className="px-2 py-1 bg-indigo-500/30 text-indigo-300 text-sm rounded-full">Volunteer</span>
+                        </div>
+                        
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-emerald-400">{volunteer.total_checkins || 0}</p>
+                          <p className="text-indigo-400 text-sm">shifts served</p>
+                        </div>
+                      </div>
+                    </button>
+                    
+                    {isSelected && (
+                      <div className="px-6 pb-6 pt-2 border-t border-indigo-500/30">
+                        <p className="text-indigo-300 text-sm mb-3">Where are you serving today?</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {rooms.map(room => (
+                            <button
+                              key={room.id}
+                              onClick={() => setRoom(volunteer.id, room.id)}
+                              className={`px-4 py-3 rounded-lg text-left transition-all ${
+                                childRooms[volunteer.id] === room.id
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+                              }`}
+                            >
+                              <p className="font-semibold text-sm">{room.name}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         
         <button 
           onClick={handleCheckIn}
@@ -865,8 +1097,8 @@ const ChildSelectScreen = ({ family, onCheckIn, onBack, activeTemplate }) => {
           }`}
         >
           {selectedChildren.length === 0 
-            ? 'Select Children to Check In' 
-            : `Check In ${selectedChildren.length} ${selectedChildren.length === 1 ? 'Child' : 'Children'}`}
+            ? 'Select Who\'s Checking In' 
+            : `Check In ${selectedChildren.length} ${selectedChildren.length === 1 ? 'Person' : 'People'}`}
         </button>
       </div>
     </div>
@@ -978,35 +1210,78 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
         
         // Fall back to server-side printing if Dymo not available
         if (!printedViaDymo) {
-          // Print child labels via server
-          for (const child of pickupCodes) {
-            await fetch(`${API_BASE}/print`, {
+          // Get label settings from active template
+          const labelSettings = activeTemplate?.label_settings || {};
+          const kidLabelSettings = labelSettings.kidLabel || {};
+          const parentLabelSettings = labelSettings.parentLabel || {};
+          const volunteerLabelSettings = labelSettings.volunteerLabel || {};
+          
+          // Separate kids from volunteers
+          const kidsToPrint = pickupCodes.filter(c => !c.isVolunteer);
+          const volunteersToPrint = pickupCodes.filter(c => c.isVolunteer);
+          
+          // Print child labels via server (if enabled)
+          if (kidLabelSettings.enabled !== false) {
+            for (const child of kidsToPrint) {
+              await fetch(`${API_BASE}/print`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  childName: child.name,
+                  avatar: child.avatar,
+                  pickupCode: child.pickupCode,
+                  room: child.room || 'Room 101',
+                  streak: (child.streak || 0) + 1,
+                  rank: 1,
+                  badges: child.badges || 0,
+                  tier: (child.streak || 0) >= 11 ? 'gold' : (child.streak || 0) >= 7 ? 'silver' : (child.streak || 0) >= 3 ? 'bronze' : null,
+                  isNewBadge: ((child.streak || 0) + 1) === 4 || ((child.streak || 0) + 1) === 8 || ((child.streak || 0) + 1) === 12,
+                  badgeName: ((child.streak || 0) + 1) === 4 ? 'Bronze Champion' : ((child.streak || 0) + 1) === 8 ? 'Silver Star' : ((child.streak || 0) + 1) === 12 ? 'Gold Legend' : null,
+                  // Pass label settings
+                  ...kidLabelSettings
+                })
+              });
+            }
+          }
+          
+          // Print volunteer badges via server (if enabled in template)
+          const shouldPrintVolunteerBadges = activeTemplate?.print_volunteer_badges !== false && volunteerLabelSettings.enabled !== false;
+          if (shouldPrintVolunteerBadges) {
+            for (const volunteer of volunteersToPrint) {
+              await fetch(`${API_BASE}/print-volunteer`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  volunteerName: volunteer.name,
+                  serviceArea: volunteer.room || '',
+                  date: new Date().toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    month: 'long', 
+                    day: 'numeric',
+                    year: 'numeric'
+                  }),
+                  // Pass label settings
+                  ...volunteerLabelSettings
+                })
+              });
+            }
+          } else {
+            console.log('Volunteer badge printing disabled for this template');
+          }
+          
+          // Print parent receipt via server (only if there are kids and enabled)
+          if (kidsToPrint.length > 0 && parentLabelSettings.enabled !== false) {
+            await fetch(`${API_BASE}/print-parent`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                childName: child.name,
-                avatar: child.avatar,
-                pickupCode: child.pickupCode,
-                room: child.room || 'Room 101',
-                streak: (child.streak || 0) + 1,
-                rank: 1,
-                badges: child.badges || 0,
-                tier: (child.streak || 0) >= 11 ? 'gold' : (child.streak || 0) >= 7 ? 'silver' : (child.streak || 0) >= 3 ? 'bronze' : null,
-                isNewBadge: ((child.streak || 0) + 1) === 4 || ((child.streak || 0) + 1) === 8 || ((child.streak || 0) + 1) === 12,
-                badgeName: ((child.streak || 0) + 1) === 4 ? 'Bronze Champion' : ((child.streak || 0) + 1) === 8 ? 'Silver Star' : ((child.streak || 0) + 1) === 12 ? 'Gold Legend' : null
+                familyName: family.name,
+                children: kidsToPrint.map(c => ({ name: c.name, pickupCode: c.pickupCode, room: c.room || 'Room 101' })),
+                // Pass label settings
+                ...parentLabelSettings
               })
             });
           }
-          
-          // Print parent receipt via server
-          await fetch(`${API_BASE}/print-parent`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              familyName: family.name,
-              children: pickupCodes.map(c => ({ name: c.name, pickupCode: c.pickupCode, room: c.room || 'Room 101' }))
-            })
-          });
           
           // Print reward certificates for each earned reward via server
           for (const reward of allEarnedRewards) {
@@ -1124,6 +1399,165 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
   );
 };
 
+// Volunteer Celebration Screen
+const VolunteerCelebrationScreen = ({ volunteer, family, onDone, activeTemplate }) => {
+  const [showConfetti, setShowConfetti] = useState(true);
+  const [printStatus, setPrintStatus] = useState('printing');
+  const hasProcessedRef = useRef(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => setShowConfetti(false), 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (hasProcessedRef.current) return;
+    hasProcessedRef.current = true;
+    
+    const processVolunteerCheckin = async () => {
+      try {
+        // Record the check-in
+        await fetch(`${API_BASE}/api/checkin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            childId: volunteer.id,
+            familyId: family.id,
+            room: volunteer.room || 'Main Area',
+            pickupCode: 'VOL',
+            templateId: activeTemplate?.id || null
+          })
+        });
+
+        // Print volunteer badge (if enabled in template)
+        const labelSettings = activeTemplate?.label_settings || {};
+        const volunteerLabelSettings = labelSettings.volunteerLabel || {};
+        const shouldPrintBadge = activeTemplate?.print_volunteer_badges !== false && volunteerLabelSettings.enabled !== false;
+        
+        if (shouldPrintBadge) {
+          await fetch(`${API_BASE}/print-volunteer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              volunteerName: `${volunteer.firstName} ${volunteer.lastName}`,
+              serviceArea: volunteer.volunteerDetails?.serviceArea || volunteer.room || '',
+              date: new Date().toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'long', 
+                day: 'numeric',
+                year: 'numeric'
+              }),
+              // Pass label settings
+              ...volunteerLabelSettings
+            })
+          });
+        } else {
+          console.log('Volunteer badge printing disabled for this template');
+        }
+        
+        setPrintStatus('done');
+      } catch (err) {
+        console.error('Volunteer check-in error:', err);
+        setPrintStatus('error');
+      }
+    };
+    
+    processVolunteerCheckin();
+  }, [volunteer, family, activeTemplate]);
+
+  // Auto-redirect after 8 seconds
+  useEffect(() => {
+    const timer = setTimeout(onDone, 8000);
+    return () => clearTimeout(timer);
+  }, [onDone]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+      {/* Confetti */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-50">
+          {[...Array(50)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute text-2xl"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: '-20px',
+                animation: `confetti-fall ${2 + Math.random() * 3}s linear forwards`,
+                animationDelay: `${Math.random() * 2}s`
+              }}
+            >
+              {['⭐', '🌟', '✨', '💜', '💙'][Math.floor(Math.random() * 5)]}
+            </div>
+          ))}
+        </div>
+      )}
+      
+      <FloatingParticles />
+      
+      <div className="relative z-10 text-center max-w-lg">
+        {/* Big Thank You */}
+        <div className="mb-8">
+          <div className="w-32 h-32 mx-auto bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-2xl mb-6">
+            <span className="text-6xl">🙏</span>
+          </div>
+          
+          <h1 className="text-5xl font-black text-white mb-4">
+            Thank You, {volunteer.firstName}!
+          </h1>
+          <p className="text-2xl text-indigo-200">
+            You're making a difference! 💜
+          </p>
+        </div>
+        
+        {/* Service Info */}
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-white/20">
+          <p className="text-indigo-200 mb-2">Serving in</p>
+          <p className="text-3xl font-bold text-white">
+            {volunteer.room || volunteer.volunteerDetails?.serviceArea || 'Main Area'}
+          </p>
+          <p className="text-indigo-300 mt-4">
+            Total shifts served: <span className="text-emerald-400 font-bold">{(volunteer.totalCheckins || 0) + 1}</span>
+          </p>
+        </div>
+        
+        {/* Print Status */}
+        <div className="mb-8">
+          {printStatus === 'printing' && (
+            <div className="flex items-center justify-center gap-3 text-indigo-200">
+              <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+              <span>Printing your volunteer badge...</span>
+            </div>
+          )}
+          {printStatus === 'done' && (
+            <div className="flex items-center justify-center gap-3 text-emerald-400">
+              <span className="text-2xl">✓</span>
+              <span>Badge printed! Please pick it up.</span>
+            </div>
+          )}
+          {printStatus === 'error' && (
+            <div className="text-amber-400">
+              Could not print badge. Please see a coordinator.
+            </div>
+          )}
+        </div>
+        
+        {/* Done Button */}
+        <button
+          onClick={onDone}
+          className="px-12 py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xl font-bold shadow-xl hover:shadow-indigo-500/50 transition-all hover:scale-105"
+        >
+          Done ✓
+        </button>
+        
+        <p className="text-indigo-300/50 text-sm mt-4">
+          Screen will auto-reset in a few seconds
+        </p>
+      </div>
+    </div>
+  );
+};
+
 // Main App
 export default function App() {
   const [screen, setScreen] = useState('welcome');
@@ -1133,22 +1567,51 @@ export default function App() {
   const [kidData, setKidData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState(null);
+  const [allTemplates, setAllTemplates] = useState([]);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   
-  // Fetch active template on mount
+  // Fetch active template and all templates on mount
   useEffect(() => {
-    const fetchActiveTemplate = async () => {
+    const fetchTemplates = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/templates/active`);
-        if (response.ok) {
-          const template = await response.json();
+        // Fetch active template
+        const activeResponse = await fetch(`${API_BASE}/api/templates/active`);
+        if (activeResponse.ok) {
+          const template = await activeResponse.json();
           setActiveTemplate(template);
         }
+        
+        // Fetch all templates for the selector
+        const allResponse = await fetch(`${API_BASE}/api/templates`);
+        if (allResponse.ok) {
+          const templates = await allResponse.json();
+          setAllTemplates(templates);
+        }
       } catch (err) {
-        console.error('Error fetching active template:', err);
+        console.error('Error fetching templates:', err);
       }
     };
-    fetchActiveTemplate();
+    fetchTemplates();
   }, []);
+  
+  // Handle manual template selection
+  const handleSelectTemplate = (template) => {
+    if (template) {
+      setActiveTemplate({
+        ...template,
+        room_ids: template.room_ids || [],
+        checkout_enabled: Boolean(template.checkout_enabled),
+        is_active: true,
+        track_streaks: template.track_streaks !== false,
+        streak_reset_days: template.streak_reset_days || 7,
+        print_volunteer_badges: template.print_volunteer_badges !== false,
+        label_settings: template.label_settings || null
+      });
+    } else {
+      setActiveTemplate(null);
+    }
+    setShowTemplateSelector(false);
+  };
   
   const handleFamilyLogin = () => setScreen('phone');
   const handleKidLogin = () => setScreen('kidpin');
@@ -1183,10 +1646,18 @@ export default function App() {
       const response = await fetch(`${API_BASE}/api/child/pin/${pin}`);
       
       if (response.ok) {
-        const childData = await response.json();
-        setKidData(childData);
-        setFamily({ id: childData.familyId, name: childData.familyName });
-        setScreen('kidcheckin');
+        const data = await response.json();
+        
+        // Check if this is a volunteer
+        if (data.isVolunteer) {
+          setKidData(data);
+          setFamily({ id: data.familyId, name: data.familyName });
+          setScreen('volunteercheckin');
+        } else {
+          setKidData(data);
+          setFamily({ id: data.familyId, name: data.familyName });
+          setScreen('kidcheckin');
+        }
       } else {
         // PIN not found - show error briefly then reset
         alert('PIN not found. Please try again or use parent phone number.');
@@ -1204,6 +1675,11 @@ export default function App() {
   const handleKidCheckIn = (childWithRoom) => {
     setSelectedChildren([childWithRoom]);
     setScreen('celebration');
+  };
+  
+  const handleVolunteerCheckIn = (volunteerWithRoom) => {
+    setSelectedChildren([volunteerWithRoom]);
+    setScreen('volunteercelebration');
   };
   
   const handleCheckIn = (children) => {
@@ -1315,15 +1791,86 @@ export default function App() {
         }
       `}</style>
       
+      {/* Template Selector - Top Right Corner */}
+      {allTemplates.length > 0 && (
+        <div className="fixed top-4 right-4 z-50">
+          <button
+            onClick={() => setShowTemplateSelector(!showTemplateSelector)}
+            className="flex items-center gap-2 px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg text-white/80 hover:bg-white/20 transition-colors text-sm"
+          >
+            <span className="text-base">📋</span>
+            <span className="hidden sm:inline">
+              {activeTemplate ? activeTemplate.name : 'No Template'}
+            </span>
+            <svg className={`w-4 h-4 transition-transform ${showTemplateSelector ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {showTemplateSelector && (
+            <div className="absolute right-0 mt-2 w-64 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-700">
+                <p className="text-white font-medium text-sm">Select Event Template</p>
+                <p className="text-slate-400 text-xs mt-1">Choose which rooms to use</p>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {/* No Template Option */}
+                <button
+                  onClick={() => handleSelectTemplate(null)}
+                  className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors ${
+                    !activeTemplate ? 'bg-emerald-900/30 border-l-2 border-emerald-500' : ''
+                  }`}
+                >
+                  <p className="text-white text-sm font-medium">All Rooms</p>
+                  <p className="text-slate-400 text-xs">No template - show all rooms</p>
+                </button>
+                
+                {allTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => handleSelectTemplate(template)}
+                    className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors ${
+                      activeTemplate?.id === template.id ? 'bg-emerald-900/30 border-l-2 border-emerald-500' : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-white text-sm font-medium">{template.name}</p>
+                      {template.is_active && (
+                        <span className="text-xs text-emerald-400">Auto</span>
+                      )}
+                    </div>
+                    <p className="text-slate-400 text-xs mt-0.5">
+                      {template.day_of_week && <span className="capitalize">{template.day_of_week}</span>}
+                      {template.start_time && <span> • {template.start_time}</span>}
+                      {template.end_time && <span> - {template.end_time}</span>}
+                      {!template.day_of_week && !template.start_time && 'Manual activation only'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
       {screen === 'welcome' && <WelcomeScreen onFamilyLogin={handleFamilyLogin} onKidLogin={handleKidLogin} />}
       {screen === 'phone' && <PhoneEntryScreen onSubmit={handlePhoneSubmit} onBack={() => setScreen('welcome')} loading={loading} />}
       {screen === 'kidpin' && <KidPinScreen onSubmit={handleKidPinSubmit} onBack={() => setScreen('welcome')} loading={loading} />}
       {screen === 'kidcheckin' && kidData && <KidCheckinScreen child={kidData} onCheckIn={handleKidCheckIn} onBack={() => setScreen('welcome')} activeTemplate={activeTemplate} />}
+      {screen === 'volunteercheckin' && kidData && <VolunteerCheckinScreen volunteer={kidData} onCheckIn={handleVolunteerCheckIn} onBack={() => setScreen('welcome')} activeTemplate={activeTemplate} />}
       {screen === 'notfound' && <NotFoundScreen phone={enteredPhone} onBack={() => setScreen('welcome')} onTryAgain={() => setScreen('phone')} />}
       {screen === 'select' && family && <ChildSelectScreen family={family} onCheckIn={handleCheckIn} onBack={() => setScreen('phone')} activeTemplate={activeTemplate} />}
       {screen === 'celebration' && selectedChildren.length > 0 && (
         <CelebrationScreen 
           children={selectedChildren}
+          family={family}
+          onDone={handleDone}
+          activeTemplate={activeTemplate}
+        />
+      )}
+      {screen === 'volunteercelebration' && selectedChildren.length > 0 && (
+        <VolunteerCelebrationScreen 
+          volunteer={selectedChildren[0]}
           family={family}
           onDone={handleDone}
           activeTemplate={activeTemplate}

@@ -61,13 +61,20 @@ export default function Register() {
     }));
   };
   
-  // Handle birthday change - auto-calculate age and PIN
+  // Handle birthday change - auto-calculate age and suggest PIN
   const handleBirthdayChange = (index, birthday) => {
     const age = calculateAge(birthday);
+    const suggestedPin = generatePinFromBirthday(birthday);
     setFamily(prev => ({
       ...prev,
       children: prev.children.map((child, i) => 
-        i === index ? { ...child, birthday, age: age.toString() } : child
+        i === index ? { 
+          ...child, 
+          birthday, 
+          age: age.toString(),
+          // Auto-fill PIN if empty, but user can change it
+          pin: child.pin || suggestedPin
+        } : child
       )
     }));
   };

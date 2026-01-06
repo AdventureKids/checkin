@@ -328,7 +328,9 @@
         if (response.ok && data.success) {
           // Store session token
           localStorage.setItem('churchcheck_session', data.token);
-          localStorage.setItem('churchcheck_user', JSON.stringify(data.user));
+          // Store user info (create from username if not provided)
+          const userObj = data.user || { username: username, role: 'admin' };
+          localStorage.setItem('churchcheck_user', JSON.stringify(userObj));
           
           // Redirect to dashboard
           window.location.href = 'dashboard.html';

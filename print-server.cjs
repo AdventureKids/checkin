@@ -721,6 +721,65 @@ app.get('/api/admin/backup-database', (req, res) => {
   }
 });
 
+// Fix all PINs - recalculate from birthdays with unique handling
+app.post('/api/admin/fix-pins', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    // Get all children with birthdays
+    const children = db.prepare("SELECT id, first_name, last_name, birthday, pin FROM children WHERE birthday IS NOT NULL AND birthday != ''").all();
+    
+    const updates = [];
+    const errors = [];
+    
+    // First pass: clear all PINs to avoid conflicts during reassignment
+    db.prepare("UPDATE children SET pin = NULL WHERE birthday IS NOT NULL AND birthday != ''").run();
+    
+    // Second pass: assign new unique PINs
+    for (const child of children) {
+      try {
+        const newPin = generateUniquePinFromBirthday(child.birthday);
+        if (newPin) {
+          db.prepare('UPDATE children SET pin = ? WHERE id = ?').run(newPin, child.id);
+          updates.push({
+            id: child.id,
+            name: `${child.first_name} ${child.last_name || ''}`.trim(),
+            oldPin: child.pin,
+            newPin: newPin,
+            birthday: child.birthday
+          });
+        } else {
+          errors.push({
+            id: child.id,
+            name: `${child.first_name} ${child.last_name || ''}`.trim(),
+            error: 'Could not generate unique PIN'
+          });
+        }
+      } catch (err) {
+        errors.push({
+          id: child.id,
+          name: `${child.first_name} ${child.last_name || ''}`.trim(),
+          error: err.message
+        });
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Updated ${updates.length} PINs`, 
+      updates,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (err) {
+    console.error('Fix PINs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Verify token
 app.get('/api/auth/verify', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -1543,6 +1602,8 @@ app.post('/api/family', (req, res) => {
       const fullName = child.lastName ? `${child.firstName} ${child.lastName}` : child.firstName;
       // Calculate age from birthday
       const age = calculateAgeFromBirthday(child.birthday);
+      // Generate unique PIN from birthday (handles duplicates)
+      const pin = child.pin || generateUniquePinFromBirthday(child.birthday);
       
       insertChild.run(
         familyId, 
@@ -1552,7 +1613,7 @@ app.post('/api/family', (req, res) => {
         age, 
         child.birthday || '',
         child.gender || '',
-        child.pin || null,
+        pin,
         avatarSeed, 
         child.allergies || '', 
         child.notes || ''
@@ -2540,6 +2601,83 @@ function calculateAgeFromBirthday(birthday) {
     age--;
   }
   return age;
+}
+
+// Helper to generate PIN from birthday (MMDDYY format) - handles timezone correctly
+function generatePinFromBirthday(birthday) {
+  if (!birthday) return null;
+  // Parse date components directly to avoid timezone issues
+  // Expected format: YYYY-MM-DD or similar
+  const parts = birthday.split(/[-\/]/);
+  if (parts.length >= 3) {
+    let year, month, day;
+    if (parts[0].length === 4) {
+      // YYYY-MM-DD format
+      year = parts[0];
+      month = parts[1].padStart(2, '0');
+      day = parts[2].padStart(2, '0');
+    } else {
+      // MM-DD-YYYY format
+      month = parts[0].padStart(2, '0');
+      day = parts[1].padStart(2, '0');
+      year = parts[2];
+    }
+    const yy = year.slice(-2);
+    return `${month}${day}${yy}`;
+  }
+  return null;
+}
+
+// Helper to generate a unique PIN (checks database for conflicts)
+function generateUniquePinFromBirthday(birthday, excludeChildId = null) {
+  const basePin = generatePinFromBirthday(birthday);
+  if (!basePin) return null;
+  
+  // Check if base PIN is available
+  let query = 'SELECT id FROM children WHERE pin = ?';
+  let params = [basePin];
+  if (excludeChildId) {
+    query += ' AND id != ?';
+    params.push(excludeChildId);
+  }
+  
+  const existing = db.prepare(query).get(...params);
+  if (!existing) {
+    return basePin; // Base PIN is available
+  }
+  
+  // PIN is taken, add a suffix (A, B, C, etc.)
+  const suffixes = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (let i = 0; i < suffixes.length; i++) {
+    const pinWithSuffix = basePin + suffixes[i];
+    params[0] = pinWithSuffix;
+    const check = db.prepare(query).get(...params);
+    if (!check) {
+      return pinWithSuffix;
+    }
+  }
+  
+  // If all letter suffixes are taken, use numbers
+  for (let i = 1; i <= 99; i++) {
+    const pinWithNum = basePin + i.toString().padStart(2, '0');
+    params[0] = pinWithNum;
+    const check = db.prepare(query).get(...params);
+    if (!check) {
+      return pinWithNum;
+    }
+  }
+  
+  // Fallback: generate random 6-digit PIN
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const randomPin = Math.floor(100000 + Math.random() * 900000).toString();
+    params[0] = randomPin;
+    const check = db.prepare(query).get(...params);
+    if (!check) {
+      return randomPin;
+    }
+  }
+  
+  return null; // Should never happen
 }
 
 app.put('/api/child/:id', (req, res) => {
