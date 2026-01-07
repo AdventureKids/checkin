@@ -1718,6 +1718,7 @@
       <form class="trial-form" action="#" method="POST">
         <input type="text" name="church" placeholder="Church Name" required>
         <input type="email" name="email" placeholder="Your Email" required>
+        <input type="password" name="password" placeholder="Create Password" required minlength="6">
         <button type="submit" class="btn btn-accent btn-large">
           Start Free Trial →
         </button>
@@ -1853,14 +1854,52 @@
     });
 
     // Form submission handling
-    document.querySelector('.trial-form').addEventListener('submit', function(e) {
+    document.querySelector('.trial-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const church = this.querySelector('input[name="church"]').value;
       const email = this.querySelector('input[name="email"]').value;
+      const password = this.querySelector('input[name="password"]').value;
+      const button = this.querySelector('button[type="submit"]');
+      const originalText = button.textContent;
       
-      // Here you would send to your backend
-      alert(`Thanks for signing up, ${church}! We'll send setup instructions to ${email}.`);
-      this.reset();
+      button.textContent = 'Creating account...';
+      button.disabled = true;
+      
+      try {
+        const API_URL = 'https://churchcheck-api.onrender.com';
+        const response = await fetch(`${API_URL}/api/auth/signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orgName: church,
+            email: email,
+            password: password
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Store token and redirect to admin
+          localStorage.setItem('churchcheck_token', data.token);
+          localStorage.setItem('churchcheck_user', JSON.stringify({
+            orgId: data.orgId,
+            orgName: data.orgName,
+            orgSlug: data.orgSlug
+          }));
+          
+          alert(`🎉 Welcome to ChurchCheck, ${church}!\n\nYour 30-day free trial has started.\nWe'll send your login credentials to ${email}.\n\nYou'll now be redirected to your admin dashboard.`);
+          window.location.href = `${API_URL}/admin`;
+        } else {
+          alert('Error: ' + (data.error || 'Could not create account. Please try again.'));
+        }
+      } catch (err) {
+        console.error('Signup error:', err);
+        alert('Connection error. Please check your internet and try again.');
+      } finally {
+        button.textContent = originalText;
+        button.disabled = false;
+      }
     });
 
     // PNG Sequence Animation for Hero Avatar

@@ -99,17 +99,37 @@ const db = new Database(DB_PATH);
 
 // Create tables
 db.exec(`
-  CREATE TABLE IF NOT EXISTS families (
+  CREATE TABLE IF NOT EXISTS organizations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    phone TEXT UNIQUE NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    email TEXT,
+    phone TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    zip TEXT,
+    logo_url TEXT,
+    subscription_status TEXT DEFAULT 'trial',
+    subscription_plan TEXT DEFAULT 'basic',
+    trial_ends_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS families (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER DEFAULT 1,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
     email TEXT,
     parent_name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (org_id) REFERENCES organizations(id)
   );
 
   CREATE TABLE IF NOT EXISTS children (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER DEFAULT 1,
     family_id INTEGER NOT NULL,
     first_name TEXT NOT NULL,
     last_name TEXT,
@@ -117,7 +137,7 @@ db.exec(`
     age INTEGER,
     birthday TEXT,
     gender TEXT,
-    pin TEXT UNIQUE,
+    pin TEXT,
     avatar TEXT DEFAULT '🦊',
     streak INTEGER DEFAULT 0,
     badges INTEGER DEFAULT 0,
@@ -125,11 +145,13 @@ db.exec(`
     allergies TEXT,
     notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (org_id) REFERENCES organizations(id),
     FOREIGN KEY (family_id) REFERENCES families(id)
   );
 
   CREATE TABLE IF NOT EXISTS checkins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER DEFAULT 1,
     child_id INTEGER NOT NULL,
     family_id INTEGER NOT NULL,
     template_id INTEGER,
@@ -137,6 +159,7 @@ db.exec(`
     pickup_code TEXT,
     checked_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     checked_out_at DATETIME,
+    FOREIGN KEY (org_id) REFERENCES organizations(id),
     FOREIGN KEY (child_id) REFERENCES children(id),
     FOREIGN KEY (family_id) REFERENCES families(id),
     FOREIGN KEY (template_id) REFERENCES templates(id)
@@ -175,6 +198,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER DEFAULT 1,
     name TEXT NOT NULL,
     day_of_week TEXT,
     start_time TEXT,
@@ -184,7 +208,8 @@ db.exec(`
     is_active INTEGER DEFAULT 0,
     streak_reset_days INTEGER DEFAULT 7,
     track_streaks INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (org_id) REFERENCES organizations(id)
   );
 
   CREATE TABLE IF NOT EXISTS child_template_streaks (
@@ -297,13 +322,51 @@ try {
   db.exec(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id INTEGER DEFAULT 1,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
+      email TEXT,
       role TEXT DEFAULT 'admin',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (org_id) REFERENCES organizations(id)
     )
   `);
   console.log('✅ Created admin_users table');
+  
+  // Migration: Add org_id columns to existing tables
+  const tablesToMigrate = ['families', 'children', 'checkins', 'templates', 'admin_users'];
+  for (const table of tablesToMigrate) {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!cols.find(c => c.name === 'org_id')) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN org_id INTEGER DEFAULT 1`);
+        console.log(`✅ Migration: Added org_id to ${table} table`);
+      }
+    } catch (e) {
+      // Table might not exist yet, ignore
+    }
+  }
+  
+  // Migration: Add email column to admin_users if missing
+  try {
+    const adminCols = db.prepare("PRAGMA table_info(admin_users)").all();
+    if (!adminCols.find(c => c.name === 'email')) {
+      db.exec('ALTER TABLE admin_users ADD COLUMN email TEXT');
+      console.log('✅ Migration: Added email to admin_users table');
+    }
+  } catch (e) {
+    // ignore
+  }
+  
+  // Create default organization if none exists
+  const orgCount = db.prepare('SELECT COUNT(*) as count FROM organizations').get();
+  if (orgCount.count === 0) {
+    db.prepare(`
+      INSERT INTO organizations (name, slug, email, subscription_status, trial_ends_at)
+      VALUES (?, ?, ?, ?, datetime('now', '+30 days'))
+    `).run('Adventure Kids', 'adventure-kids', 'admin@adventurekids.com', 'trial');
+    console.log('✅ Created default organization');
+  }
   
   // Create volunteer_compliance table for tracking background checks and training
   db.exec(`
@@ -631,10 +694,15 @@ if (familyCount.count === 0) {
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   
-  // Check master admin first
+  // Check master admin first (superadmin has access to all orgs)
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
     const token = generateSessionToken();
-    activeSessions.set(token, { username, role: 'superadmin', loginTime: Date.now() });
+    activeSessions.set(token, { 
+      username, 
+      role: 'superadmin', 
+      orgId: null, // superadmin can access all orgs
+      loginTime: Date.now() 
+    });
     
     // Clean up old sessions (older than 24 hours)
     const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
@@ -644,17 +712,30 @@ app.post('/api/auth/login', (req, res) => {
       }
     }
     
-    return res.json({ success: true, token });
+    return res.json({ success: true, token, role: 'superadmin' });
   }
   
   // Check database users
   try {
-    const user = db.prepare('SELECT * FROM admin_users WHERE LOWER(username) = LOWER(?)').get(username);
+    const user = db.prepare('SELECT u.*, o.name as org_name, o.slug as org_slug FROM admin_users u LEFT JOIN organizations o ON u.org_id = o.id WHERE LOWER(u.username) = LOWER(?)').get(username);
     if (user && user.password === password) {
       const token = generateSessionToken();
-      activeSessions.set(token, { username: user.username, role: user.role, loginTime: Date.now() });
+      activeSessions.set(token, { 
+        username: user.username, 
+        role: user.role, 
+        orgId: user.org_id,
+        orgName: user.org_name,
+        loginTime: Date.now() 
+      });
       
-      return res.json({ success: true, token });
+      return res.json({ 
+        success: true, 
+        token, 
+        role: user.role,
+        orgId: user.org_id,
+        orgName: user.org_name,
+        orgSlug: user.org_slug
+      });
     }
   } catch (err) {
     console.error('Login DB error:', err);
@@ -662,6 +743,150 @@ app.post('/api/auth/login', (req, res) => {
   
   res.status(401).json({ error: 'Invalid credentials' });
 });
+
+// Organization signup (free trial)
+app.post('/api/auth/signup', async (req, res) => {
+  const { orgName, email, password, adminName } = req.body;
+  
+  if (!orgName || !email || !password) {
+    return res.status(400).json({ error: 'Organization name, email, and password are required' });
+  }
+  
+  try {
+    // Generate slug from org name
+    let slug = orgName.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    
+    // Check if slug exists
+    const existingSlug = db.prepare('SELECT id FROM organizations WHERE slug = ?').get(slug);
+    if (existingSlug) {
+      slug = slug + '-' + Math.random().toString(36).substring(2, 6);
+    }
+    
+    // Check if email already registered
+    const existingEmail = db.prepare('SELECT id FROM organizations WHERE email = ?').get(email);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'An organization with this email already exists' });
+    }
+    
+    // Create organization
+    const orgResult = db.prepare(`
+      INSERT INTO organizations (name, slug, email, subscription_status, trial_ends_at)
+      VALUES (?, ?, ?, 'trial', datetime('now', '+30 days'))
+    `).run(orgName, slug, email);
+    
+    const orgId = orgResult.lastInsertRowid;
+    
+    // Create admin user for this org
+    const username = email.split('@')[0];
+    db.prepare(`
+      INSERT INTO admin_users (org_id, username, password, email, role)
+      VALUES (?, ?, ?, ?, 'admin')
+    `).run(orgId, username, password, email);
+    
+    // Generate session token
+    const token = generateSessionToken();
+    activeSessions.set(token, { 
+      username, 
+      role: 'admin', 
+      orgId,
+      orgName,
+      loginTime: Date.now() 
+    });
+    
+    res.json({ 
+      success: true, 
+      token,
+      orgId,
+      orgName,
+      orgSlug: slug,
+      trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get organization info
+app.get('/api/organization', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const session = activeSessions.get(token);
+  
+  try {
+    if (session.role === 'superadmin') {
+      // Superadmin can see all orgs
+      const orgs = db.prepare('SELECT * FROM organizations ORDER BY name').all();
+      return res.json({ organizations: orgs, isSuperadmin: true });
+    }
+    
+    const org = db.prepare('SELECT * FROM organizations WHERE id = ?').get(session.orgId);
+    if (!org) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    res.json(org);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List all organizations (superadmin only)
+app.get('/api/organizations', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const session = activeSessions.get(token);
+  if (session.role !== 'superadmin') {
+    return res.status(403).json({ error: 'Forbidden - superadmin only' });
+  }
+  
+  try {
+    const orgs = db.prepare(`
+      SELECT o.*, 
+        (SELECT COUNT(*) FROM families WHERE org_id = o.id) as family_count,
+        (SELECT COUNT(*) FROM children WHERE org_id = o.id) as child_count,
+        (SELECT COUNT(*) FROM admin_users WHERE org_id = o.id) as user_count
+      FROM organizations o
+      ORDER BY o.created_at DESC
+    `).all();
+    
+    res.json(orgs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper: Get org_id from session or query param (for kiosk mode)
+function getOrgIdFromRequest(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  // Check session first
+  if (token && activeSessions.has(token)) {
+    const session = activeSessions.get(token);
+    // Superadmin can specify org_id in query
+    if (session.role === 'superadmin' && req.query.org_id) {
+      return parseInt(req.query.org_id);
+    }
+    return session.orgId || 1; // Default to org 1 for backwards compatibility
+  }
+  
+  // For unauthenticated kiosk requests, use query param or default
+  if (req.query.org_id) {
+    return parseInt(req.query.org_id);
+  }
+  
+  return 1; // Default org for backwards compatibility
+}
 
 // Database sync - upload database from local to cloud
 // Note: This writes the database file and requires a server restart to take effect
@@ -1803,15 +2028,18 @@ app.post('/api/checkin', (req, res) => {
 
 // Get all families (for admin)
 app.get('/api/families', (req, res) => {
+  const orgId = getOrgIdFromRequest(req);
+  
   // Exclude volunteers (families with "(Volunteer)" in name or children with notes = 'Volunteer')
   const families = db.prepare(`
     SELECT f.* FROM families f 
-    WHERE f.name NOT LIKE '%(Volunteer)%'
+    WHERE (f.org_id = ? OR f.org_id IS NULL)
+    AND f.name NOT LIKE '%(Volunteer)%'
     AND NOT EXISTS (
       SELECT 1 FROM children c WHERE c.family_id = f.id AND c.notes = 'Volunteer'
     )
     ORDER BY f.name
-  `).all();
+  `).all(orgId);
   
   const result = families.map(family => {
     const children = db.prepare('SELECT * FROM children WHERE family_id = ?').all(family.id);
