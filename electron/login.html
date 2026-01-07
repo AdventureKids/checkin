@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChurchCheck - Login</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+    
+    .login-container {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 24px;
+      padding: 48px;
+      width: 100%;
+      max-width: 420px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    
+    .logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .logo-icon {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #8B5CF6, #A855F7, #F59E0B);
+      clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    
+    .logo-icon::after {
+      content: '⚡';
+      position: absolute;
+      font-size: 2rem;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -35%);
+    }
+    
+    .logo h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    
+    .logo p {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.9rem;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    label {
+      display: block;
+      font-size: 0.875rem;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 8px;
+    }
+    
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      color: white;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    
+    input:focus {
+      outline: none;
+      border-color: #8B5CF6;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+    
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #8B5CF6, #A855F7);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3);
+    }
+    
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      margin-top: 12px;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    
+    .error {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      color: #fca5a5;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 0.875rem;
+      display: none;
+    }
+    
+    .error.show {
+      display: block;
+    }
+    
+    .status {
+      text-align: center;
+      margin-top: 20px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.875rem;
+    }
+    
+    .status.syncing {
+      color: #8B5CF6;
+    }
+    
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 24px 0;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 0.875rem;
+    }
+    
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .divider span {
+      padding: 0 16px;
+    }
+    
+    .offline-mode {
+      text-align: center;
+      padding: 16px;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: 12px;
+      margin-top: 20px;
+    }
+    
+    .offline-mode h3 {
+      color: #F59E0B;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    
+    .offline-mode p {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.8rem;
+    }
+    
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="logo">
+      <div class="logo-icon"></div>
+      <h1>ChurchCheck</h1>
+      <p>Kids Check-In Kiosk</p>
+    </div>
+    
+    <div id="error" class="error"></div>
+    
+    <form id="loginForm">
+      <div class="form-group">
+        <label>Email or Username</label>
+        <input type="text" id="username" placeholder="admin@yourchurch.com" required>
+      </div>
+      
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="••••••••" required>
+      </div>
+      
+      <button type="submit" class="btn btn-primary" id="loginBtn">
+        Sign In & Sync Data
+      </button>
+    </form>
+    
+    <div class="divider"><span>or</span></div>
+    
+    <button type="button" class="btn btn-secondary" id="offlineBtn">
+      Continue Offline
+    </button>
+    
+    <div class="offline-mode">
+      <h3>💡 Offline Mode</h3>
+      <p>Use existing local data without syncing. Check-ins will sync when you go online.</p>
+    </div>
+    
+    <div id="status" class="status"></div>
+  </div>
+  
+  <script>
+    const API_URL = 'https://churchcheck-api.onrender.com';
+    
+    const loginForm = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const offlineBtn = document.getElementById('offlineBtn');
+    const errorDiv = document.getElementById('error');
+    const statusDiv = document.getElementById('status');
+    
+    function showError(message) {
+      errorDiv.textContent = message;
+      errorDiv.classList.add('show');
+    }
+    
+    function hideError() {
+      errorDiv.classList.remove('show');
+    }
+    
+    function setStatus(message, isSyncing = false) {
+      statusDiv.textContent = message;
+      statusDiv.className = 'status' + (isSyncing ? ' syncing' : '');
+    }
+    
+    function setLoading(loading) {
+      loginBtn.disabled = loading;
+      if (loading) {
+        loginBtn.innerHTML = '<span class="spinner"></span>Signing in...';
+      } else {
+        loginBtn.textContent = 'Sign In & Sync Data';
+      }
+    }
+    
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+      setLoading(true);
+      
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      try {
+        setStatus('Connecting to server...', true);
+        
+        // Login to cloud API
+        const response = await fetch(`${API_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Invalid credentials');
+        }
+        
+        setStatus('Syncing organization data...', true);
+        
+        // Store auth info
+        const authData = {
+          token: data.token,
+          orgId: data.orgId,
+          orgName: data.orgName,
+          orgSlug: data.orgSlug,
+          role: data.role,
+          username: username
+        };
+        
+        // Send auth data to Electron main process
+        if (window.electronAPI) {
+          await window.electronAPI.login(authData);
+        } else {
+          // Fallback: store in localStorage and redirect
+          localStorage.setItem('churchcheck_auth', JSON.stringify(authData));
+          window.location.href = `http://localhost:3001?org_id=${data.orgId}`;
+        }
+        
+        setStatus('Login successful! Loading app...', true);
+        
+      } catch (err) {
+        console.error('Login error:', err);
+        showError(err.message || 'Failed to connect. Check your internet connection.');
+        setLoading(false);
+        setStatus('');
+      }
+    });
+    
+    offlineBtn.addEventListener('click', () => {
+      // Continue with local data only
+      if (window.electronAPI) {
+        window.electronAPI.continueOffline();
+      } else {
+        window.location.href = 'http://localhost:3001';
+      }
+    });
+    
+    // Check if already logged in
+    document.addEventListener('DOMContentLoaded', () => {
+      const savedAuth = localStorage.getItem('churchcheck_auth');
+      if (savedAuth) {
+        try {
+          const auth = JSON.parse(savedAuth);
+          document.getElementById('username').value = auth.username || '';
+        } catch (e) {}
+      }
+    });
+  </script>
+</body>
+</html>
+

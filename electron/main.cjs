@@ -1,13 +1,60 @@
-const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 // Keep references to prevent garbage collection
 let mainWindow = null;
+let loginWindow = null;
 let server = null;
+let authData = null;
 
 const isDev = process.env.NODE_ENV === 'development';
 const PORT = 3001;
+const API_URL = 'https://churchcheck-api.onrender.com';
+
+// ============================================
+// AUTH STORAGE
+// ============================================
+
+function getAuthPath() {
+  return path.join(app.getPath('userData'), 'auth.json');
+}
+
+function loadSavedAuth() {
+  try {
+    const authPath = getAuthPath();
+    if (fs.existsSync(authPath)) {
+      const data = fs.readFileSync(authPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load saved auth:', err);
+  }
+  return null;
+}
+
+function saveAuth(data) {
+  try {
+    const authPath = getAuthPath();
+    fs.writeFileSync(authPath, JSON.stringify(data, null, 2));
+    console.log('Auth saved to:', authPath);
+  } catch (err) {
+    console.error('Failed to save auth:', err);
+  }
+}
+
+function clearAuth() {
+  try {
+    const authPath = getAuthPath();
+    if (fs.existsSync(authPath)) {
+      fs.unlinkSync(authPath);
+    }
+    authData = null;
+  } catch (err) {
+    console.error('Failed to clear auth:', err);
+  }
+}
 
 // ============================================
 // DATABASE & ASSETS SETUP
@@ -124,28 +171,59 @@ function startServer() {
 // WINDOW MANAGEMENT
 // ============================================
 
-function createWindow() {
+function createLoginWindow() {
+  loginWindow = new BrowserWindow({
+    width: 500,
+    height: 700,
+    resizable: false,
+    title: 'ChurchCheck - Login',
+    icon: path.join(__dirname, 'icons', 'icon.png'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs')
+    },
+    show: false,
+    backgroundColor: '#1a1a2e'
+  });
+
+  loginWindow.loadFile(path.join(__dirname, 'login.html'));
+
+  loginWindow.once('ready-to-show', () => {
+    loginWindow.show();
+  });
+
+  loginWindow.on('closed', () => {
+    loginWindow = null;
+  });
+}
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 700,
-    title: 'Adventure Kids Check-In',
+    title: authData?.orgName ? `${authData.orgName} - ChurchCheck` : 'ChurchCheck',
     icon: path.join(__dirname, 'icons', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
       webSecurity: true
     },
     show: false,
     backgroundColor: '#1a1a2e'
   });
 
+  // Add org_id to URL if authenticated
+  const orgParam = authData?.orgId ? `?org_id=${authData.orgId}` : '';
+  
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL(`http://localhost:5173${orgParam}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadURL(`http://localhost:${PORT}`);
+    mainWindow.loadURL(`http://localhost:${PORT}${orgParam}`);
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -167,9 +245,20 @@ function createWindow() {
 function createMenu() {
   const template = [
     {
-      label: 'Adventure Kids',
+      label: 'ChurchCheck',
       submenu: [
         { label: 'About', click: showAbout },
+        { type: 'separator' },
+        { 
+          label: 'Switch Organization', 
+          click: () => {
+            clearAuth();
+            if (mainWindow) {
+              mainWindow.close();
+            }
+            createLoginWindow();
+          }
+        },
         { type: 'separator' },
         { role: 'quit' }
       ]
@@ -201,7 +290,22 @@ function createMenu() {
           label: 'Open Admin Dashboard',
           click: () => {
             if (mainWindow) {
-              mainWindow.loadURL(`http://localhost:${PORT}/admin`);
+              const orgParam = authData?.orgId ? `?org_id=${authData.orgId}` : '';
+              mainWindow.loadURL(`http://localhost:${PORT}/admin${orgParam}`);
+            }
+          }
+        },
+        {
+          label: 'Sync Data from Cloud',
+          click: async () => {
+            if (authData?.token) {
+              await syncFromCloud();
+            } else {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Not Logged In',
+                message: 'Please log in to sync data from the cloud.'
+              });
             }
           }
         }
@@ -211,7 +315,18 @@ function createMenu() {
 
   if (process.platform === 'darwin') {
     template[0].submenu = [
-      { label: 'About Adventure Kids Check-In', click: showAbout },
+      { label: 'About ChurchCheck', click: showAbout },
+      { type: 'separator' },
+      { 
+        label: 'Switch Organization', 
+        click: () => {
+          clearAuth();
+          if (mainWindow) {
+            mainWindow.close();
+          }
+          createLoginWindow();
+        }
+      },
       { type: 'separator' },
       { role: 'services' },
       { type: 'separator' },
@@ -228,13 +343,101 @@ function createMenu() {
 }
 
 function showAbout() {
-  dialog.showMessageBox(mainWindow, {
+  const orgInfo = authData?.orgName ? `\nOrganization: ${authData.orgName}` : '';
+  dialog.showMessageBox(mainWindow || loginWindow, {
     type: 'info',
-    title: 'About Adventure Kids Check-In',
-    message: 'Adventure Kids Check-In',
-    detail: `Version: ${app.getVersion()}\n\nA fun and engaging check-in system for children's ministry.\n\n© ${new Date().getFullYear()} Adventure Kids`
+    title: 'About ChurchCheck',
+    message: 'ChurchCheck',
+    detail: `Version: ${app.getVersion()}${orgInfo}\n\nKids check-in that makes them want to come back.\n\n© ${new Date().getFullYear()} ChurchCheck`
   });
 }
+
+// ============================================
+// CLOUD SYNC
+// ============================================
+
+async function syncFromCloud() {
+  if (!authData?.token) {
+    console.log('No auth token, cannot sync');
+    return false;
+  }
+  
+  try {
+    console.log('Syncing data from cloud...');
+    
+    // For now, we'll just verify the token is still valid
+    // Full sync would download families, children, etc. from the cloud
+    // and merge with local database
+    
+    const response = await fetch(`${API_URL}/api/auth/verify`, {
+      headers: { 'Authorization': `Bearer ${authData.token}` }
+    });
+    
+    if (!response.ok) {
+      console.log('Token expired, need to re-login');
+      return false;
+    }
+    
+    console.log('Sync complete');
+    return true;
+  } catch (err) {
+    console.error('Sync error:', err);
+    return false;
+  }
+}
+
+// ============================================
+// IPC HANDLERS
+// ============================================
+
+ipcMain.handle('login', async (event, data) => {
+  console.log('Login received:', data.orgName);
+  authData = data;
+  saveAuth(data);
+  
+  // Close login window and open main window
+  if (loginWindow) {
+    loginWindow.close();
+  }
+  
+  createMainWindow();
+  return { success: true };
+});
+
+ipcMain.handle('continue-offline', async () => {
+  console.log('Continuing offline');
+  authData = null;
+  
+  // Close login window and open main window without auth
+  if (loginWindow) {
+    loginWindow.close();
+  }
+  
+  createMainWindow();
+  return { success: true };
+});
+
+ipcMain.handle('get-auth', async () => {
+  return authData;
+});
+
+ipcMain.handle('logout', async () => {
+  clearAuth();
+  return { success: true };
+});
+
+ipcMain.handle('sync-from-cloud', async () => {
+  return await syncFromCloud();
+});
+
+ipcMain.handle('get-app-info', async () => {
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    orgName: authData?.orgName,
+    isOffline: !authData?.token
+  };
+});
 
 // ============================================
 // APP LIFECYCLE
@@ -247,8 +450,28 @@ app.whenReady().then(async () => {
   
   try {
     await startServer();
-    console.log('Server started, creating window...');
-    createWindow();
+    console.log('Server started');
+    
+    // Check for saved auth
+    authData = loadSavedAuth();
+    
+    if (authData?.token) {
+      console.log('Found saved auth for:', authData.orgName);
+      // Verify token is still valid
+      const isValid = await syncFromCloud();
+      if (isValid) {
+        console.log('Token valid, opening main window');
+        createMainWindow();
+      } else {
+        console.log('Token expired, showing login');
+        clearAuth();
+        createLoginWindow();
+      }
+    } else {
+      console.log('No saved auth, showing login');
+      createLoginWindow();
+    }
+    
   } catch (err) {
     console.error('Failed to start:', err);
     dialog.showErrorBox('Startup Error', `Failed to start the application: ${err.message}`);
@@ -264,7 +487,11 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    if (authData?.token) {
+      createMainWindow();
+    } else {
+      createLoginWindow();
+    }
   }
 });
 

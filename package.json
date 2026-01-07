@@ -1,10 +1,10 @@
 {
-  "name": "adventure-kids-checkin",
-  "productName": "Adventure Kids Check-In",
+  "name": "churchcheck",
+  "productName": "ChurchCheck",
   "private": true,
   "version": "1.0.0",
-  "description": "A fun and engaging check-in system for children's ministry",
-  "author": "Adventure Kids",
+  "description": "Kids check-in that makes them want to come back",
+  "author": "ChurchCheck",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -46,8 +46,8 @@
     "wait-on": "^9.0.3"
   },
   "build": {
-    "appId": "com.adventurekids.checkin",
-    "productName": "Adventure Kids Check-In",
+    "appId": "com.churchcheck.app",
+    "productName": "ChurchCheck",
     "directories": {
       "output": "release",
       "buildResources": "electron/icons"
@@ -93,7 +93,7 @@
       "gatekeeperAssess": false
     },
     "dmg": {
-      "title": "Adventure Kids Check-In",
+      "title": "ChurchCheck",
       "icon": "electron/icons/icon.icns",
       "contents": [
         {
@@ -121,7 +121,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Adventure Kids Check-In"
+      "shortcutName": "ChurchCheck"
     },
     "linux": {
       "icon": "electron/icons",

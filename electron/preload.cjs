@@ -1,13 +1,22 @@
-// Preload script for Electron
-// This runs in the renderer process but has access to Node.js APIs
-// We use contextBridge to safely expose APIs to the renderer
+const { contextBridge, ipcRenderer } = require('electron');
 
-const { contextBridge } = require('electron');
-
-// Expose protected methods that allow the renderer process to use
-// specific Electron/Node.js features without exposing the entire API
+// Expose protected methods to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
-  platform: process.platform,
-  isElectron: true
+  // Login and sync data
+  login: (authData) => ipcRenderer.invoke('login', authData),
+  
+  // Continue without login (offline mode)
+  continueOffline: () => ipcRenderer.invoke('continue-offline'),
+  
+  // Get current auth state
+  getAuth: () => ipcRenderer.invoke('get-auth'),
+  
+  // Logout
+  logout: () => ipcRenderer.invoke('logout'),
+  
+  // Sync data from cloud
+  syncFromCloud: () => ipcRenderer.invoke('sync-from-cloud'),
+  
+  // Get app info
+  getAppInfo: () => ipcRenderer.invoke('get-app-info')
 });
-
