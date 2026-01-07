@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to ChurchCheck! - Your Account is Ready</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --primary: #4F46E5;
+      --primary-dark: #3730A3;
+      --primary-light: #818CF8;
+      --accent: #F59E0B;
+      --accent-light: #FCD34D;
+      --success: #10B981;
+      --dark: #0F172A;
+      --dark-lighter: #1E293B;
+      --gray: #64748B;
+      --light: #F8FAFC;
+      --white: #FFFFFF;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--dark);
+      color: var(--white);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    
+    .success-container {
+      max-width: 600px;
+      width: 100%;
+      text-align: center;
+    }
+    
+    .success-icon {
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, var(--success), #059669);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 2rem;
+      font-size: 3rem;
+      animation: pop 0.5s ease-out;
+    }
+    
+    @keyframes pop {
+      0% { transform: scale(0); }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--white), var(--primary-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .subtitle {
+      color: var(--gray);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .org-name {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    
+    .credentials-card {
+      background: var(--dark-lighter);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+    
+    .credentials-card h2 {
+      font-size: 1.1rem;
+      color: var(--gray);
+      margin-bottom: 1.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .credential-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+    }
+    
+    .credential-row:last-child {
+      margin-bottom: 0;
+    }
+    
+    .credential-label {
+      color: var(--gray);
+      font-size: 0.9rem;
+    }
+    
+    .credential-value {
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+      font-size: 1rem;
+      color: var(--white);
+      background: rgba(79, 70, 229, 0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      border: 1px solid rgba(79, 70, 229, 0.3);
+    }
+    
+    .trial-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: var(--accent);
+      padding: 0.75rem 1.25rem;
+      border-radius: 50px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 2rem;
+    }
+    
+    .next-steps {
+      background: var(--dark-lighter);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+    
+    .next-steps h3 {
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+      color: var(--white);
+    }
+    
+    .step {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      align-items: flex-start;
+    }
+    
+    .step:last-child {
+      margin-bottom: 0;
+    }
+    
+    .step-number {
+      width: 28px;
+      height: 28px;
+      background: var(--primary);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    
+    .step-text {
+      color: var(--gray);
+      font-size: 0.95rem;
+      padding-top: 2px;
+    }
+    
+    .step-text strong {
+      color: var(--white);
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 1rem 2rem;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: var(--white);
+      box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.5);
+    }
+    
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      color: var(--white);
+      margin-left: 1rem;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    
+    .buttons {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    .note {
+      color: var(--gray);
+      font-size: 0.85rem;
+      margin-top: 2rem;
+    }
+    
+    .note a {
+      color: var(--primary-light);
+      text-decoration: none;
+    }
+    
+    .note a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="success-container">
+    <div class="success-icon">🎉</div>
+    
+    <h1>You're All Set!</h1>
+    <p class="subtitle">Welcome to ChurchCheck, <span class="org-name" id="orgName">Your Church</span></p>
+    
+    <div class="trial-badge">
+      <span>⏱️</span>
+      <span>30-Day Free Trial Started</span>
+    </div>
+    
+    <div class="credentials-card">
+      <h2>📋 Your Login Credentials</h2>
+      <div class="credential-row">
+        <span class="credential-label">Username</span>
+        <span class="credential-value" id="username">admin</span>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">Password</span>
+        <span class="credential-value">The password you just created</span>
+      </div>
+    </div>
+    
+    <div class="next-steps">
+      <h3>🚀 Next Steps</h3>
+      <div class="step">
+        <span class="step-number">1</span>
+        <span class="step-text"><strong>Log in to Admin Dashboard</strong> — Set up your rooms, templates, and import your families</span>
+      </div>
+      <div class="step">
+        <span class="step-number">2</span>
+        <span class="step-text"><strong>Download the Desktop App</strong> — For check-in kiosks with Dymo label printing</span>
+      </div>
+      <div class="step">
+        <span class="step-number">3</span>
+        <span class="step-text"><strong>Start Checking In!</strong> — Families can register or check in using their phone number</span>
+      </div>
+    </div>
+    
+    <div class="buttons">
+      <a href="admin.html" class="btn btn-primary">
+        <span>Log In to Dashboard</span>
+        <span>→</span>
+      </a>
+      <a href="index.html" class="btn btn-secondary">
+        Back to Home
+      </a>
+    </div>
+    
+    <p class="note">
+      Save these credentials somewhere safe. Need help? <a href="mailto:support@churchcheck.com">Contact Support</a>
+    </p>
+  </div>
+  
+  <script>
+    // Load signup data from localStorage
+    document.addEventListener('DOMContentLoaded', function() {
+      const signupData = localStorage.getItem('churchcheck_signup');
+      
+      if (signupData) {
+        try {
+          const data = JSON.parse(signupData);
+          
+          if (data.orgName) {
+            document.getElementById('orgName').textContent = data.orgName;
+          }
+          if (data.username) {
+            document.getElementById('username').textContent = data.username;
+          }
+          
+          // Clear the signup data (one-time use)
+          localStorage.removeItem('churchcheck_signup');
+        } catch (e) {
+          console.error('Failed to parse signup data:', e);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
+

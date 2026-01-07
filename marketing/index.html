@@ -1880,23 +1880,24 @@
         const data = await response.json();
         
         if (data.success) {
-          // Store token and redirect to admin
-          localStorage.setItem('churchcheck_token', data.token);
-          localStorage.setItem('churchcheck_user', JSON.stringify({
-            orgId: data.orgId,
+          // Store credentials for the success page
+          localStorage.setItem('churchcheck_signup', JSON.stringify({
             orgName: data.orgName,
-            orgSlug: data.orgSlug
+            email: email,
+            username: email.split('@')[0],
+            trialEndsAt: data.trialEndsAt
           }));
           
-          alert(`🎉 Welcome to ChurchCheck, ${church}!\n\nYour 30-day free trial has started.\nWe'll send your login credentials to ${email}.\n\nYou'll now be redirected to your admin dashboard.`);
-          window.location.href = `${API_URL}/admin`;
+          // Redirect to success page
+          window.location.href = 'signup-success.html';
         } else {
           alert('Error: ' + (data.error || 'Could not create account. Please try again.'));
+          button.textContent = originalText;
+          button.disabled = false;
         }
       } catch (err) {
         console.error('Signup error:', err);
         alert('Connection error. Please check your internet and try again.');
-      } finally {
         button.textContent = originalText;
         button.disabled = false;
       }
