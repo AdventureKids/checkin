@@ -5683,7 +5683,7 @@ function SettingsTab({ logo, setLogo, token }) {
             <h4 className="text-white font-medium mb-1">macOS (Apple Silicon)</h4>
             <p className="text-slate-400 text-xs mb-3">For M1/M2/M3 Macs</p>
             <a 
-              href="/downloads/Adventure Kids Check-In-1.0.0-arm64.dmg"
+              href="/downloads/ChurchCheck-1.0.0-arm64.dmg"
               className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
             >
               Download DMG
@@ -5694,7 +5694,7 @@ function SettingsTab({ logo, setLogo, token }) {
             <h4 className="text-white font-medium mb-1">macOS (Intel)</h4>
             <p className="text-slate-400 text-xs mb-3">For older Intel Macs</p>
             <a 
-              href="/downloads/Adventure Kids Check-In-1.0.0.dmg"
+              href="/downloads/ChurchCheck-1.0.0.dmg"
               className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
             >
               Download DMG
@@ -5705,7 +5705,7 @@ function SettingsTab({ logo, setLogo, token }) {
             <h4 className="text-white font-medium mb-1">Windows</h4>
             <p className="text-slate-400 text-xs mb-3">Windows 10/11 (64-bit)</p>
             <a 
-              href="/downloads/Adventure Kids Check-In Setup 1.0.0.exe"
+              href="/downloads/ChurchCheck Setup 1.0.0.exe"
               className="inline-block px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm"
             >
               Download EXE
