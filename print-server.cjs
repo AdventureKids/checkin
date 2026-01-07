@@ -347,6 +347,18 @@ try {
     }
   }
   
+  // Migration: Ensure all existing data has org_id = 1 (for backwards compatibility)
+  for (const table of tablesToMigrate) {
+    try {
+      const updated = db.prepare(`UPDATE ${table} SET org_id = 1 WHERE org_id IS NULL`).run();
+      if (updated.changes > 0) {
+        console.log(`✅ Migration: Set org_id=1 for ${updated.changes} rows in ${table}`);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  
   // Migration: Add email column to admin_users if missing
   try {
     const adminCols = db.prepare("PRAGMA table_info(admin_users)").all();
@@ -784,6 +796,41 @@ app.post('/api/auth/signup', async (req, res) => {
       INSERT INTO admin_users (org_id, username, password, email, role)
       VALUES (?, ?, ?, ?, 'admin')
     `).run(orgId, username, password, email);
+    
+    // Create sample data for new organization
+    try {
+      // Sample family 1
+      const family1 = db.prepare(`
+        INSERT INTO families (org_id, name, phone, email, parent_name)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(orgId, 'The Smith Family', '5551234567', 'smith@example.com', 'John Smith');
+      
+      db.prepare(`
+        INSERT INTO children (org_id, family_id, first_name, last_name, name, age, birthday, gender, pin, streak, badges, total_checkins)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(orgId, family1.lastInsertRowid, 'Emma', 'Smith', 'Emma Smith', 8, '2016-05-15', 'female', '051516', 3, 2, 12);
+      
+      db.prepare(`
+        INSERT INTO children (org_id, family_id, first_name, last_name, name, age, birthday, gender, pin, streak, badges, total_checkins)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(orgId, family1.lastInsertRowid, 'Jake', 'Smith', 'Jake Smith', 5, '2019-08-22', 'male', '082219', 3, 1, 8);
+      
+      // Sample family 2
+      const family2 = db.prepare(`
+        INSERT INTO families (org_id, name, phone, email, parent_name)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(orgId, 'The Johnson Family', '5559876543', 'johnson@example.com', 'Sarah Johnson');
+      
+      db.prepare(`
+        INSERT INTO children (org_id, family_id, first_name, last_name, name, age, birthday, gender, pin, streak, badges, total_checkins)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(orgId, family2.lastInsertRowid, 'Lily', 'Johnson', 'Lily Johnson', 6, '2018-03-10', 'female', '031018', 5, 3, 20);
+      
+      console.log(`✅ Created sample data for org ${orgId}`);
+    } catch (seedErr) {
+      console.error('Error creating sample data:', seedErr);
+      // Don't fail signup if sample data fails
+    }
     
     // Generate session token
     const token = generateSessionToken();
@@ -2033,7 +2080,7 @@ app.get('/api/families', (req, res) => {
   // Exclude volunteers (families with "(Volunteer)" in name or children with notes = 'Volunteer')
   const families = db.prepare(`
     SELECT f.* FROM families f 
-    WHERE (f.org_id = ? OR f.org_id IS NULL)
+    WHERE f.org_id = ?
     AND f.name NOT LIKE '%(Volunteer)%'
     AND NOT EXISTS (
       SELECT 1 FROM children c WHERE c.family_id = f.id AND c.notes = 'Volunteer'
@@ -2073,14 +2120,18 @@ app.get('/api/families', (req, res) => {
 
 // Get all volunteers
 app.get('/api/volunteers', (req, res) => {
+  const orgId = getOrgIdFromRequest(req);
+  
   try {
     // Get all families marked as volunteers (includes both volunteer-only and parent-volunteers)
+    // IMPORTANT: Filter by org_id to ensure data isolation between organizations
     const volunteerFamilies = db.prepare(`
       SELECT f.*
       FROM families f 
       WHERE f.is_volunteer = 1
+      AND (f.org_id = ? OR f.org_id IS NULL)
       ORDER BY f.name
-    `).all();
+    `).all(orgId);
   
   const result = volunteerFamilies.map(family => {
     const children = db.prepare('SELECT * FROM children WHERE family_id = ?').all(family.id);
@@ -2218,7 +2269,8 @@ app.delete('/api/rooms/:id', (req, res) => {
 
 // Get all templates
 app.get('/api/templates', (req, res) => {
-  const templates = db.prepare('SELECT * FROM templates ORDER BY name').all();
+  const orgId = getOrgIdFromRequest(req);
+  const templates = db.prepare('SELECT * FROM templates WHERE org_id = ? ORDER BY name').all(orgId);
   // Parse room_ids and label_settings JSON for each template
   const parsed = templates.map(t => ({
     ...t,
@@ -2539,28 +2591,32 @@ app.delete('/api/templates/:id', (req, res) => {
 
 // Get attendance stats
 app.get('/api/stats', (req, res) => {
-  const totalFamilies = db.prepare('SELECT COUNT(*) as count FROM families').get().count;
-  const totalKids = db.prepare('SELECT COUNT(*) as count FROM children').get().count;
-  const totalCheckins = db.prepare('SELECT COUNT(*) as count FROM checkins').get().count;
+  const orgId = getOrgIdFromRequest(req);
+  
+  const totalFamilies = db.prepare('SELECT COUNT(*) as count FROM families WHERE org_id = ?').get(orgId).count;
+  const totalKids = db.prepare('SELECT COUNT(*) as count FROM children WHERE org_id = ?').get(orgId).count;
+  const totalCheckins = db.prepare('SELECT COUNT(*) as count FROM checkins WHERE org_id = ?').get(orgId).count;
   
   // Get check-ins by date (last 6 weeks)
   const attendance = db.prepare(`
     SELECT DATE(checked_in_at) as date, COUNT(*) as count 
     FROM checkins 
     WHERE checked_in_at >= datetime('now', '-42 days')
+    AND org_id = ?
     GROUP BY DATE(checked_in_at)
     ORDER BY date DESC
     LIMIT 10
-  `).all();
+  `).all(orgId);
   
   // Get top streaks
   const topStreaks = db.prepare(`
     SELECT c.*, f.name as family_name 
     FROM children c 
     JOIN families f ON c.family_id = f.id 
+    WHERE c.org_id = ?
     ORDER BY c.streak DESC 
     LIMIT 5
-  `).all();
+  `).all(orgId);
   
   res.json({
     totalFamilies,

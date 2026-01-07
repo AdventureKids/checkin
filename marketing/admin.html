@@ -270,10 +270,10 @@
       <summary>⚙️ Server Settings</summary>
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label">API Server URL</label>
-        <input type="text" class="form-input" id="serverUrl" placeholder="https://your-server.com" value="">
+        <input type="text" class="form-input" id="serverUrl" placeholder="https://churchcheck-api.onrender.com" value="">
       </div>
       <p style="font-size: 0.8rem; color: var(--gray);">
-        Leave blank for localhost (development). For production, enter your server URL.
+        Default: ChurchCheck cloud server. Only change for self-hosted installations.
       </p>
     </details>
     
@@ -281,8 +281,11 @@
   </div>
 
   <script>
-    // Get stored server URL or default to empty (localhost)
-    const storedServerUrl = localStorage.getItem('churchcheck_server_url') || '';
+    // Default API URL - ChurchCheck cloud server
+    const DEFAULT_API_URL = 'https://churchcheck-api.onrender.com';
+    
+    // Get stored server URL or default to cloud server
+    const storedServerUrl = localStorage.getItem('churchcheck_server_url') || DEFAULT_API_URL;
     document.getElementById('serverUrl').value = storedServerUrl;
     
     function getApiBase() {
@@ -291,8 +294,8 @@
         localStorage.setItem('churchcheck_server_url', serverUrl);
         return serverUrl;
       }
-      // Default to localhost for development
-      return 'http://localhost:3001';
+      // Default to ChurchCheck cloud server
+      return DEFAULT_API_URL;
     }
     
     document.getElementById('loginForm').addEventListener('submit', async function(e) {
