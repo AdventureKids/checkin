@@ -3730,7 +3730,28 @@ app.post('/print', async (req, res) => {
     
     const printerName = 'DYMO_LabelWriter_450_Turbo';
     
-    const printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    let printCmd;
+    if (process.platform === 'win32') {
+      // Windows: Use PowerShell to print with proper orientation
+      // The image is already in landscape orientation, so we just need to print it
+      const psScript = `
+        Add-Type -AssemblyName System.Drawing
+        $img = [System.Drawing.Image]::FromFile('${tempPath.replace(/\\/g, '\\\\')}')
+        $pd = New-Object System.Drawing.Printing.PrintDocument
+        $pd.PrinterSettings.PrinterName = '${printerName}'
+        $pd.DefaultPageSettings.Landscape = $true
+        $pd.PrintPage.Add({
+          param($sender, $e)
+          $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+        })
+        $pd.Print()
+        $img.Dispose()
+      `.replace(/\n/g, ' ');
+      printCmd = `powershell -Command "${psScript}"`;
+    } else {
+      // macOS/Linux: Use lp command
+      printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    }
     
     exec(printCmd, (err, stdout, stderr) => {
       if (err) {
@@ -3766,7 +3787,27 @@ app.post('/print-parent', async (req, res) => {
     
     const printerName = 'DYMO_LabelWriter_450_Turbo';
     
-    const printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    let printCmd;
+    if (process.platform === 'win32') {
+      // Windows: Use PowerShell to print with proper orientation
+      const psScript = `
+        Add-Type -AssemblyName System.Drawing
+        $img = [System.Drawing.Image]::FromFile('${tempPath.replace(/\\/g, '\\\\')}')
+        $pd = New-Object System.Drawing.Printing.PrintDocument
+        $pd.PrinterSettings.PrinterName = '${printerName}'
+        $pd.DefaultPageSettings.Landscape = $true
+        $pd.PrintPage.Add({
+          param($sender, $e)
+          $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+        })
+        $pd.Print()
+        $img.Dispose()
+      `.replace(/\n/g, ' ');
+      printCmd = `powershell -Command "${psScript}"`;
+    } else {
+      // macOS/Linux: Use lp command
+      printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    }
     
     exec(printCmd, (err, stdout, stderr) => {
       if (err) {
@@ -3802,7 +3843,27 @@ app.post('/print-volunteer', async (req, res) => {
     
     const printerName = 'DYMO_LabelWriter_450_Turbo';
     
-    const printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    let printCmd;
+    if (process.platform === 'win32') {
+      // Windows: Use PowerShell to print with proper orientation
+      const psScript = `
+        Add-Type -AssemblyName System.Drawing
+        $img = [System.Drawing.Image]::FromFile('${tempPath.replace(/\\/g, '\\\\')}')
+        $pd = New-Object System.Drawing.Printing.PrintDocument
+        $pd.PrinterSettings.PrinterName = '${printerName}'
+        $pd.DefaultPageSettings.Landscape = $true
+        $pd.PrintPage.Add({
+          param($sender, $e)
+          $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+        })
+        $pd.Print()
+        $img.Dispose()
+      `.replace(/\n/g, ' ');
+      printCmd = `powershell -Command "${psScript}"`;
+    } else {
+      // macOS/Linux: Use lp command
+      printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    }
     
     exec(printCmd, (err, stdout, stderr) => {
       if (err) {
