@@ -5,37 +5,49 @@ import { isDymoServiceRunning, getDymoPrinters, printCheckInLabels } from './dym
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 // ============================================
-// AVATAR SYSTEM - Single explorer character
+// AVATAR SYSTEM - Gender-based explorer characters
 // ============================================
-const AVATAR_STATIC = '/avatars/boy-ranger/boy-test-000.png';
-const AVATAR_FRAME_COUNT = 115; // Frames 000-114
 
-// Get avatar URL - returns the static PNG for all avatars
-const getAvatarUrl = () => AVATAR_STATIC;
+// Get avatar config based on gender (folder, prefix, and frame count)
+const getAvatarConfig = (gender) => {
+  const isFemale = gender?.toLowerCase() === 'female' || gender?.toLowerCase() === 'f';
+  return {
+    folder: isFemale ? 'girl-ranger' : 'boy-ranger',
+    prefix: isFemale ? 'girl-test' : 'boy-test',
+    frameCount: isFemale ? 150 : 115  // Girl: 000-149, Boy: 000-114
+  };
+};
 
-// Animated Avatar component - plays PNG sequence
-const AnimatedAvatar = ({ className = "w-56 h-56", onAnimationComplete }) => {
+// Get static avatar URL based on gender
+const getAvatarUrl = (gender) => {
+  const { folder, prefix } = getAvatarConfig(gender);
+  return `/avatars/${folder}/${prefix}-000.png`;
+};
+
+// Animated Avatar component - plays PNG sequence based on gender
+const AnimatedAvatar = ({ gender, className = "w-56 h-56", onAnimationComplete }) => {
   const [frame, setFrame] = useState(0);
   const frameRef = useRef(0);
   const animationRef = useRef(null);
+  const { folder, prefix, frameCount } = getAvatarConfig(gender);
   
   useEffect(() => {
-    // Preload all frames
+    // Preload all frames for the selected gender
     const preloadImages = () => {
-      for (let i = 0; i < AVATAR_FRAME_COUNT; i++) {
+      for (let i = 0; i < frameCount; i++) {
         const img = new Image();
-        img.src = `/avatars/boy-ranger/boy-test-${String(i).padStart(3, '0')}.png`;
+        img.src = `/avatars/${folder}/${prefix}-${String(i).padStart(3, '0')}.png`;
       }
     };
     preloadImages();
     
-    // Animate at ~24fps (approximately matches a 115 frame animation)
+    // Animate at ~24fps
     const fps = 24;
     const frameDelay = 1000 / fps;
     
     const animate = () => {
       frameRef.current += 1;
-      if (frameRef.current >= AVATAR_FRAME_COUNT) {
+      if (frameRef.current >= frameCount) {
         // Animation complete - stay on last frame or loop
         if (onAnimationComplete) {
           onAnimationComplete();
@@ -54,13 +66,13 @@ const AnimatedAvatar = ({ className = "w-56 h-56", onAnimationComplete }) => {
         clearTimeout(animationRef.current);
       }
     };
-  }, [onAnimationComplete]);
+  }, [onAnimationComplete, folder, prefix, frameCount]);
   
   const frameNumber = String(frame).padStart(3, '0');
   
   return (
     <img 
-      src={`/avatars/boy-ranger/boy-test-${frameNumber}.png`}
+      src={`/avatars/${folder}/${prefix}-${frameNumber}.png`}
       alt="Adventure Kid"
       className={className}
     />
@@ -405,7 +417,7 @@ const KidCheckinScreen = ({ child, onCheckIn, onBack, activeTemplate }) => {
         {/* Avatar and Name - Hero Section */}
         <div className="text-center mb-8">
           <div className="relative inline-block mb-4">
-            <AnimatedAvatar className="w-56 h-56 mx-auto drop-shadow-2xl" />
+            <AnimatedAvatar gender={child.gender} className="w-56 h-56 mx-auto drop-shadow-2xl" />
             {/* Streak badge */}
             {child.streak > 0 && (
               <div className="absolute -bottom-3 -right-3 bg-orange-500 text-white px-3 py-2 rounded-full text-sm font-bold shadow-lg flex flex-col items-center leading-tight">
@@ -965,7 +977,7 @@ const ChildSelectScreen = ({ family, onCheckIn, onBack, activeTemplate }) => {
                         </div>
                         
                         <img 
-                          src={getAvatarUrl()} 
+                          src={getAvatarUrl(child.gender)} 
                           alt={child.name}
                           className="w-28 h-28 flex-shrink-0"
                         />
@@ -1331,7 +1343,7 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
             return (
               <div key={child.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/20 flex items-center gap-4">
                 <img 
-                  src={getAvatarUrl()} 
+                  src={getAvatarUrl(child.gender)} 
                   alt={child.name}
                   className="w-24 h-24 flex-shrink-0"
                 />

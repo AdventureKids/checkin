@@ -3,8 +3,164 @@ const cors = require('cors');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { createCanvas, loadImage } = require('canvas');
 const Database = require('better-sqlite3');
+
+// ============================================
+// CROSS-PLATFORM PRINT HELPER
+// ============================================
+const IS_WINDOWS = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+
+/**
+ * Find Dymo printer name on Windows
+ * @returns {Promise<string|null>}
+ */
+async function findDymoPrinterWindows() {
+  return new Promise((resolve) => {
+    const cmd = 'powershell -Command "Get-Printer | Select-Object -ExpandProperty Name"';
+    exec(cmd, (err, stdout) => {
+      if (err) {
+        console.error('Failed to list printers:', err);
+        resolve(null);
+        return;
+      }
+      const printers = stdout.trim().split('\n').map(p => p.trim()).filter(p => p);
+      console.log('Available Windows printers:', printers);
+      
+      // Look for Dymo printer
+      const dymo = printers.find(p => 
+        p.toLowerCase().includes('dymo') || 
+        p.toLowerCase().includes('labelwriter')
+      );
+      
+      if (dymo) {
+        console.log('Found Dymo printer:', dymo);
+        resolve(dymo);
+      } else {
+        console.log('No Dymo printer found, will use default');
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Print a file to the Dymo LabelWriter
+ * @param {string} filePath - Path to the image file to print
+ * @param {string} printerName - Name of the printer
+ * @returns {Promise<{success: boolean, message: string, output?: string}>}
+ */
+function printToLabel(filePath, printerName = 'DYMO_LabelWriter_450_Turbo') {
+  return new Promise(async (resolve, reject) => {
+    if (IS_WINDOWS) {
+      // Find the actual Dymo printer name on Windows
+      const dymoPrinter = await findDymoPrinterWindows();
+      const targetPrinter = dymoPrinter || printerName.replace(/_/g, ' ');
+      
+      // Use PowerShell to print with proper scaling
+      // This uses Windows.Graphics.Printing which respects image dimensions better
+      const psScript = `
+Add-Type -AssemblyName System.Drawing
+$img = [System.Drawing.Image]::FromFile('${filePath.replace(/\\/g, '\\\\').replace(/'/g, "''")}')
+$printDoc = New-Object System.Drawing.Printing.PrintDocument
+$printDoc.PrinterSettings.PrinterName = '${targetPrinter.replace(/'/g, "''")}'
+$printDoc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
+$printDoc.add_PrintPage({
+  param($sender, $e)
+  $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+})
+$printDoc.Print()
+$img.Dispose()
+Write-Host "Printed to $($printDoc.PrinterSettings.PrinterName)"
+`;
+      
+      const tempPsPath = path.join(__dirname, 'temp-print.ps1');
+      fs.writeFileSync(tempPsPath, psScript);
+      
+      const printCmd = `powershell -ExecutionPolicy Bypass -File "${tempPsPath}"`;
+      console.log(`🖨️ Windows print via PowerShell .NET`);
+      
+      exec(printCmd, { windowsHide: true, timeout: 30000 }, (err, stdout, stderr) => {
+        // Clean up temp script
+        setTimeout(() => {
+          try { fs.unlinkSync(tempPsPath); } catch (e) {}
+        }, 2000);
+        
+        if (err) {
+          console.error('Print error:', err);
+          console.error('stderr:', stderr);
+          // Try fallback to mspaint
+          console.log('Trying mspaint fallback...');
+          const fallbackCmd = `mspaint /pt "${filePath}" "${targetPrinter}"`;
+          exec(fallbackCmd, { windowsHide: true, timeout: 30000 }, (err2) => {
+            if (err2 && err2.killed) {
+              reject({ success: false, message: 'Print failed', details: stderr || err.message });
+              return;
+            }
+            resolve({ success: true, message: 'Label sent to printer (fallback)!', output: 'mspaint fallback' });
+          });
+          return;
+        }
+        
+        console.log('Print success:', stdout);
+        resolve({ success: true, message: 'Label printed!', output: stdout });
+      });
+    } else {
+      // macOS/Linux: Use lp command with CUPS
+      const printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${filePath}"`;
+      console.log(`🖨️ macOS print command: ${printCmd}`);
+      
+      exec(printCmd, { windowsHide: true }, (err, stdout, stderr) => {
+        if (err) {
+          console.error('Print error:', err);
+          console.error('stderr:', stderr);
+          reject({ success: false, message: 'Failed to print', details: stderr || err.message });
+          return;
+        }
+        
+        console.log('Print success:', stdout);
+        resolve({ success: true, message: 'Label printed!', output: stdout });
+      });
+    }
+  });
+}
+
+/**
+ * Get list of available printers
+ * @returns {Promise<string[]>}
+ */
+function getAvailablePrinters() {
+  return new Promise((resolve, reject) => {
+    if (IS_WINDOWS) {
+      // Windows: Use PowerShell to list printers
+      const cmd = 'powershell -Command "Get-Printer | Select-Object -ExpandProperty Name"';
+      exec(cmd, (err, stdout) => {
+        if (err) {
+          console.error('Failed to list printers:', err);
+          resolve([]);
+          return;
+        }
+        const printers = stdout.trim().split('\n').map(p => p.trim()).filter(p => p);
+        resolve(printers);
+      });
+    } else {
+      // macOS/Linux: Use lpstat
+      exec('lpstat -p', (err, stdout) => {
+        if (err) {
+          console.error('Failed to list printers:', err);
+          resolve([]);
+          return;
+        }
+        const printers = stdout.split('\n')
+          .filter(line => line.startsWith('printer'))
+          .map(line => line.split(' ')[1]);
+        resolve(printers);
+      });
+    }
+  });
+}
 
 // ============================================
 // DEPLOYMENT CONFIGURATION
@@ -2627,6 +2783,7 @@ app.get('/api/stats', (req, res) => {
       id: k.id,
       name: k.name,
       avatar: k.avatar,
+      gender: k.gender,
       streak: k.streak,
       badges: k.badges,
       familyName: k.family_name
@@ -3327,7 +3484,7 @@ app.get('/api/rewards/stats', (req, res) => {
     const totalEarned = db.prepare('SELECT COUNT(*) as count FROM earned_rewards').get().count;
     const unclaimed = db.prepare('SELECT COUNT(*) as count FROM earned_rewards WHERE prize_claimed = 0').get().count;
     const recentEarned = db.prepare(`
-      SELECT er.*, r.name, r.icon, c.name as child_name, c.avatar
+      SELECT er.*, r.name, r.icon, c.name as child_name, c.avatar, c.gender
       FROM earned_rewards er
       JOIN rewards r ON er.reward_id = r.id
       JOIN children c ON er.child_id = c.id
@@ -3486,7 +3643,7 @@ async function generateLabelImage(data) {
     
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 120px Arial';
-      ctx.textAlign = 'center';
+  ctx.textAlign = 'center';
       ctx.fillText(childName.substring(0, 2).toUpperCase(), avatarX + avatarSize/2, avatarY + avatarSize/2 + 40);
     }
   }
@@ -3508,8 +3665,8 @@ async function generateLabelImage(data) {
 
   // Child name - BIG
   if (showName) {
-    ctx.fillStyle = '#000000';
-    ctx.textAlign = 'left';
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'left';
     
     // Use nameSize setting, with auto-shrink if too long
     let currentSize = Math.min(nameSize, 150); // Cap at 150
@@ -3544,7 +3701,7 @@ async function generateLabelImage(data) {
   const statWidth = 150;
   statItems.forEach((stat, i) => {
     const statX = contentX + (i * statWidth);
-    ctx.font = 'bold 64px Arial';
+  ctx.font = 'bold 64px Arial';
     ctx.fillText(stat.value, statX, statsY);
     ctx.font = 'bold 22px Arial';
     ctx.fillText(stat.label, statX, statsY + 30);
@@ -3572,18 +3729,18 @@ async function generateLabelImage(data) {
   if (showPickupCode) {
     // Dashed separator line
     const separatorX = 1040;
-    ctx.strokeStyle = '#000000';
+  ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 6]);
-    ctx.beginPath();
+  ctx.beginPath();
     ctx.moveTo(separatorX, 25);
     ctx.lineTo(separatorX, LABEL_HEIGHT - 25);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
     // Scissors icon
     ctx.font = '24px Arial';
-    ctx.textAlign = 'center';
+  ctx.textAlign = 'center';
     ctx.fillText('✂', separatorX, LABEL_HEIGHT / 2 + 8);
     
     // Pickup code - centered in remaining space
@@ -3606,7 +3763,7 @@ async function generateLabelImage(data) {
   if (showDate) {
     ctx.font = '20px Arial';
     ctx.fillStyle = '#666666';
-    ctx.textAlign = 'center';
+  ctx.textAlign = 'center';
     ctx.fillText('ADVENTURE KIDS CHECK-IN', LABEL_WIDTH / 2, LABEL_HEIGHT - 25);
   }
 
@@ -3665,17 +3822,17 @@ function generateParentLabelImage(data) {
 
   // Children list
   if (showChildren && children && children.length > 0) {
-    ctx.textAlign = 'left';
-    
-    children.forEach((child, index) => {
-      const xPos = 60 + (index % 3) * 380;
+  ctx.textAlign = 'left';
+
+  children.forEach((child, index) => {
+    const xPos = 60 + (index % 3) * 380;
       const yOffset = Math.floor(index / 3) * 180;
-      
+    
       // Child name
       const cappedNameSize = Math.min(nameSize, 60); // Cap at 60
       ctx.font = `bold ${cappedNameSize}px Arial`;
-      ctx.fillText(child.name, xPos, yPos + yOffset);
-      
+    ctx.fillText(child.name, xPos, yPos + yOffset);
+    
       // Room
       if (showRooms) {
         ctx.font = `${Math.max(cappedNameSize - 14, 20)}px Arial`;
@@ -3728,41 +3885,13 @@ app.post('/print', async (req, res) => {
       return res.json({ success: true, message: 'Label generated (printing disabled on server)', printDisabled: true });
     }
     
-    const printerName = 'DYMO_LabelWriter_450_Turbo';
-    
-    let printCmd;
-    if (process.platform === 'win32') {
-      // Windows: Use PowerShell to print with proper orientation
-      // The image is already in landscape orientation, so we just need to print it
-      const psScript = `
-        Add-Type -AssemblyName System.Drawing
-        $img = [System.Drawing.Image]::FromFile('${tempPath.replace(/\\/g, '\\\\')}')
-        $pd = New-Object System.Drawing.Printing.PrintDocument
-        $pd.PrinterSettings.PrinterName = '${printerName}'
-        $pd.DefaultPageSettings.Landscape = $true
-        $pd.PrintPage.Add({
-          param($sender, $e)
-          $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
-        })
-        $pd.Print()
-        $img.Dispose()
-      `.replace(/\n/g, ' ');
-      printCmd = `powershell -Command "${psScript}"`;
-    } else {
-      // macOS/Linux: Use lp command
-      printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
+    try {
+      const result = await printToLabel(tempPath);
+      res.json(result);
+    } catch (printErr) {
+      console.error('Print error:', printErr);
+      res.status(500).json({ error: 'Failed to print', details: printErr.details || printErr.message });
     }
-    
-    exec(printCmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error('Print error:', err);
-        console.error('stderr:', stderr);
-        return res.status(500).json({ error: 'Failed to print', details: stderr });
-      }
-      
-      console.log('Print success:', stdout);
-      res.json({ success: true, message: 'Label printed!', output: stdout });
-    });
   } catch (err) {
     console.error('Error generating label:', err);
     res.status(500).json({ error: err.message });
@@ -3785,39 +3914,13 @@ app.post('/print-parent', async (req, res) => {
       return res.json({ success: true, message: 'Parent receipt generated (printing disabled on server)', printDisabled: true });
     }
     
-    const printerName = 'DYMO_LabelWriter_450_Turbo';
-    
-    let printCmd;
-    if (process.platform === 'win32') {
-      // Windows: Use PowerShell to print with proper orientation
-      const psScript = `
-        Add-Type -AssemblyName System.Drawing
-        $img = [System.Drawing.Image]::FromFile('${tempPath.replace(/\\/g, '\\\\')}')
-        $pd = New-Object System.Drawing.Printing.PrintDocument
-        $pd.PrinterSettings.PrinterName = '${printerName}'
-        $pd.DefaultPageSettings.Landscape = $true
-        $pd.PrintPage.Add({
-          param($sender, $e)
-          $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
-        })
-        $pd.Print()
-        $img.Dispose()
-      `.replace(/\n/g, ' ');
-      printCmd = `powershell -Command "${psScript}"`;
-    } else {
-      // macOS/Linux: Use lp command
-      printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
-    }
-    
-    exec(printCmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error('Print error:', err);
-        return res.status(500).json({ error: 'Failed to print', details: stderr });
-      }
-      
-      console.log('Parent receipt printed:', stdout);
+    try {
+      const result = await printToLabel(tempPath);
       res.json({ success: true, message: 'Parent receipt printed!' });
-    });
+    } catch (printErr) {
+      console.error('Print error:', printErr);
+      res.status(500).json({ error: 'Failed to print', details: printErr.details || printErr.message });
+    }
   } catch (err) {
     console.error('Error generating parent label:', err);
     res.status(500).json({ error: err.message });
@@ -3841,39 +3944,13 @@ app.post('/print-volunteer', async (req, res) => {
       return res.json({ success: true, message: 'Volunteer badge generated (printing disabled on server)', printDisabled: true });
     }
     
-    const printerName = 'DYMO_LabelWriter_450_Turbo';
-    
-    let printCmd;
-    if (process.platform === 'win32') {
-      // Windows: Use PowerShell to print with proper orientation
-      const psScript = `
-        Add-Type -AssemblyName System.Drawing
-        $img = [System.Drawing.Image]::FromFile('${tempPath.replace(/\\/g, '\\\\')}')
-        $pd = New-Object System.Drawing.Printing.PrintDocument
-        $pd.PrinterSettings.PrinterName = '${printerName}'
-        $pd.DefaultPageSettings.Landscape = $true
-        $pd.PrintPage.Add({
-          param($sender, $e)
-          $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
-        })
-        $pd.Print()
-        $img.Dispose()
-      `.replace(/\n/g, ' ');
-      printCmd = `powershell -Command "${psScript}"`;
-    } else {
-      // macOS/Linux: Use lp command
-      printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
-    }
-    
-    exec(printCmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error('Print error:', err);
-        return res.status(500).json({ error: 'Failed to print', details: stderr });
-      }
-      
-      console.log('Volunteer badge printed:', stdout);
+    try {
+      const result = await printToLabel(tempPath);
       res.json({ success: true, message: 'Volunteer badge printed!' });
-    });
+    } catch (printErr) {
+      console.error('Print error:', printErr);
+      res.status(500).json({ error: 'Failed to print', details: printErr.details || printErr.message });
+    }
   } catch (err) {
     console.error('Error generating volunteer badge:', err);
     res.status(500).json({ error: err.message });
@@ -4080,18 +4157,13 @@ app.post('/print-reward', async (req, res) => {
       return res.json({ success: true, message: 'Reward certificate generated (printing disabled on server)', printDisabled: true });
     }
     
-    const printerName = 'DYMO_LabelWriter_450_Turbo';
-    const printCmd = `lp -d "${printerName}" -o fit-to-page -o orientation-requested=4 "${tempPath}"`;
-    
-    exec(printCmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error('Print error:', err);
-        return res.status(500).json({ error: 'Failed to print', details: stderr });
-      }
-      
-      console.log('Reward label printed:', stdout);
+    try {
+      const result = await printToLabel(tempPath);
       res.json({ success: true, message: 'Reward printed!' });
-    });
+    } catch (printErr) {
+      console.error('Print error:', printErr);
+      res.status(500).json({ error: 'Failed to print', details: printErr.details || printErr.message });
+    }
   } catch (err) {
     console.error('Error generating reward label:', err);
     res.status(500).json({ error: err.message });
@@ -4236,6 +4308,577 @@ app.get('/printers', (req, res) => {
 });
 
 // ============================================
+// CCB API INTEGRATION
+// ============================================
+
+const CCB_CONFIG = {
+  subdomain: process.env.CCB_SUBDOMAIN || 'cc-ea',
+  username: process.env.CCB_API_USER || 'Directory',
+  password: process.env.CCB_API_PASS || 'Maranatha1'
+};
+
+const https = require('https');
+
+/**
+ * Fetch events from CCB API
+ */
+function fetchCCBEvents(daysAhead = 60) {
+  return new Promise((resolve, reject) => {
+    const auth = Buffer.from(`${CCB_CONFIG.username}:${CCB_CONFIG.password}`).toString('base64');
+    
+    const today = new Date();
+    const queryParams = new URLSearchParams({
+      srv: 'event_profiles',
+      modified_since: new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    });
+
+    const url = `https://${CCB_CONFIG.subdomain}.ccbchurch.com/api.php?${queryParams.toString()}`;
+    
+    const urlObj = new URL(url);
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Accept': 'application/xml'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          resolve(parseCCBEventsXML(data));
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(15000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    req.end();
+  });
+}
+
+/**
+ * Parse CCB XML response into clean event objects
+ * Extracts ALL available data from CCB events
+ */
+function parseCCBEventsXML(xml) {
+  const events = [];
+  const eventMatches = xml.match(/<event id="[^"]*">[\s\S]*?<\/event>/g) || [];
+  
+  for (const eventXml of eventMatches) {
+    const event = {};
+    
+    // Extract ID
+    const idMatch = eventXml.match(/<event id="(\d+)">/);
+    if (idMatch) event.id = idMatch[1];
+    
+    // Extract simple text fields
+    const simpleFields = [
+      'name', 'description', 'leader_notes', 
+      'start_date', 'start_time', 'end_date', 'end_time', 
+      'start_datetime', 'end_datetime', 'timezone',
+      'recurrence_description', 'listed', 'public_calendar_listed', 
+      'created', 'modified', 'image'
+    ];
+    
+    for (const field of simpleFields) {
+      const match = eventXml.match(new RegExp(`<${field}>([\\s\\S]*?)<\\/${field}>`));
+      if (match) {
+        event[field] = match[1].trim()
+          .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      }
+    }
+    
+    // Extract group
+    const groupMatch = eventXml.match(/<group id="(\d+)">([^<]+)<\/group>/);
+    if (groupMatch) {
+      event.group_id = groupMatch[1];
+      event.group_name = groupMatch[2];
+    }
+    
+    // Extract organizer
+    const organizerMatch = eventXml.match(/<organizer id="(\d+)">([^<]+)<\/organizer>/);
+    if (organizerMatch) {
+      event.organizer_id = organizerMatch[1];
+      event.organizer = organizerMatch[2];
+    }
+    
+    // Extract creator
+    const creatorMatch = eventXml.match(/<creator id="(\d+)">([^<]+)<\/creator>/);
+    if (creatorMatch) {
+      event.creator_id = creatorMatch[1];
+      event.creator = creatorMatch[2];
+    }
+    
+    // Extract modifier
+    const modifierMatch = eventXml.match(/<modifier id="(\d+)">([^<]+)<\/modifier>/);
+    if (modifierMatch) {
+      event.modifier_id = modifierMatch[1];
+      event.modifier = modifierMatch[2];
+    }
+    
+    // Extract approval status
+    const approvalMatch = eventXml.match(/<approval_status id="(\d+)">([^<]+)<\/approval_status>/);
+    if (approvalMatch) {
+      event.approval_status_id = approvalMatch[1];
+      event.approval_status = approvalMatch[2];
+    }
+    
+    // Extract contact phone
+    const phoneMatch = eventXml.match(/<phone type="([^"]*)">([^<]*)<\/phone>/);
+    if (phoneMatch) {
+      event.contact_phone_type = phoneMatch[1];
+      event.contact_phone = phoneMatch[2];
+    }
+    
+    // Extract event grouping
+    const groupingMatch = eventXml.match(/<event_grouping id="([^"]*)">([^<]*)<\/event_grouping>/);
+    if (groupingMatch && groupingMatch[1]) {
+      event.event_grouping_id = groupingMatch[1];
+      event.event_grouping = groupingMatch[2];
+    }
+    
+    // Extract location (all fields)
+    const locationMatch = eventXml.match(/<location>([\s\S]*?)<\/location>/);
+    if (locationMatch) {
+      const locXml = locationMatch[1];
+      event.location = {};
+      const locFields = ['name', 'street_address', 'city', 'state', 'zip', 'line_1', 'line_2'];
+      for (const field of locFields) {
+        const m = locXml.match(new RegExp(`<${field}>([^<]*)<\\/${field}>`));
+        if (m && m[1]) event.location[field] = m[1];
+      }
+    }
+    
+    // Extract resources (all fields)
+    const resourceMatches = eventXml.match(/<resource id="[^"]*">[\s\S]*?<\/resource>/g) || [];
+    if (resourceMatches.length > 0) {
+      event.resources = resourceMatches.map(r => {
+        const resource = {};
+        const idMatch = r.match(/id="(\d+)"/);
+        if (idMatch) resource.id = idMatch[1];
+        
+        const resFields = ['name', 'description', 'resource_type'];
+        for (const field of resFields) {
+          const m = r.match(new RegExp(`<${field}>([^<]*)<\\/${field}>`));
+          if (m && m[1]) resource[field === 'resource_type' ? 'type' : field] = m[1];
+        }
+        
+        const statusMatch = r.match(/<status id="(\d+)">([^<]+)<\/status>/);
+        if (statusMatch) {
+          resource.status_id = statusMatch[1];
+          resource.status = statusMatch[2];
+        }
+        
+        return resource;
+      });
+    }
+    
+    // Extract setup info
+    const setupMatch = eventXml.match(/<setup>([\s\S]*?)<\/setup>/);
+    if (setupMatch) {
+      const setupXml = setupMatch[1];
+      event.setup = {};
+      const startM = setupXml.match(/<start>([^<]+)<\/start>/);
+      const endM = setupXml.match(/<end>([^<]+)<\/end>/);
+      const notesM = setupXml.match(/<notes>([\s\S]*?)<\/notes>/);
+      if (startM) event.setup.start = startM[1];
+      if (endM) event.setup.end = endM[1];
+      if (notesM && notesM[1].trim()) event.setup.notes = notesM[1].trim();
+    }
+    
+    // Extract registration info
+    const regMatch = eventXml.match(/<registration>([\s\S]*?)<\/registration>/);
+    if (regMatch) {
+      const regXml = regMatch[1];
+      event.registration = {};
+      const limitM = regXml.match(/<limit>(\d+)<\/limit>/);
+      const typeM = regXml.match(/<event_type id="(\d+)">([^<]+)<\/event_type>/);
+      if (limitM) event.registration.limit = parseInt(limitM[1]);
+      if (typeM) {
+        event.registration.type_id = typeM[1];
+        event.registration.type = typeM[2];
+      }
+    }
+    
+    // Extract exceptions (for recurring events)
+    const exceptionsMatch = eventXml.match(/<exceptions>([\s\S]*?)<\/exceptions>/);
+    if (exceptionsMatch && exceptionsMatch[1].trim()) {
+      event.exceptions = exceptionsMatch[1].trim();
+    }
+    
+    events.push(event);
+  }
+  
+  return events;
+}
+
+// CCB Events API endpoint
+app.get('/api/ccb/events', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 60;
+    const events = await fetchCCBEvents(days);
+    
+    // Filter to future events only and sort by date
+    const now = new Date();
+    const futureEvents = events
+      .filter(e => {
+        if (!e.start_datetime) return false;
+        const eventDate = new Date(e.start_datetime);
+        return eventDate >= now;
+      })
+      .sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+    
+    res.json({
+      success: true,
+      count: futureEvents.length,
+      events: futureEvents
+    });
+  } catch (err) {
+    console.error('CCB API error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// CCB Events - grouped by date
+app.get('/api/ccb/events/calendar', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 60;
+    const events = await fetchCCBEvents(days);
+    
+    const now = new Date();
+    const calendar = {};
+    
+    events
+      .filter(e => {
+        if (!e.start_datetime) return false;
+        const eventDate = new Date(e.start_datetime);
+        return eventDate >= now;
+      })
+      .forEach(e => {
+        const dateKey = e.start_datetime.split(' ')[0]; // YYYY-MM-DD
+        if (!calendar[dateKey]) calendar[dateKey] = [];
+        calendar[dateKey].push(e);
+      });
+    
+    // Sort events within each day
+    for (const date in calendar) {
+      calendar[date].sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+    }
+    
+    res.json({
+      success: true,
+      calendar: calendar
+    });
+  } catch (err) {
+    console.error('CCB API error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Serve events directory page (BEFORE static file serving)
+app.get('/events', (req, res) => {
+  res.sendFile(path.join(__dirname, 'marketing', 'events.html'));
+});
+
+// ============================================
+// CCB FORMS API
+// ============================================
+
+/**
+ * Fetch forms list from CCB API
+ */
+function fetchCCBForms() {
+  return new Promise((resolve, reject) => {
+    const auth = Buffer.from(`${CCB_CONFIG.username}:${CCB_CONFIG.password}`).toString('base64');
+    
+    const url = `https://${CCB_CONFIG.subdomain}.ccbchurch.com/api.php?srv=form_list`;
+    const urlObj = new URL(url);
+    
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Accept': 'application/xml'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          resolve(parseCCBFormsXML(data));
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(15000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    req.end();
+  });
+}
+
+/**
+ * Parse CCB forms XML response
+ */
+function parseCCBFormsXML(xml) {
+  const forms = [];
+  const formMatches = xml.match(/<form id="[^"]*">[\s\S]*?<\/form>/g) || [];
+  
+  for (const formXml of formMatches) {
+    const form = {};
+    
+    // Extract ID
+    const idMatch = formXml.match(/<form id="(\d+)">/);
+    if (idMatch) form.id = idMatch[1];
+    
+    // Extract simple fields
+    const fields = ['title', 'description', 'start', 'end', 'public', 'published', 'archived', 'status', 'created', 'modified', 'url'];
+    for (const field of fields) {
+      const match = formXml.match(new RegExp(`<${field}>([\\s\\S]*?)<\\/${field}>`));
+      if (match) {
+        form[field] = match[1].trim()
+          .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+      }
+    }
+    
+    // Extract campus
+    const campusMatch = formXml.match(/<campus id="(\d+)">([^<]+)<\/campus>/);
+    if (campusMatch) {
+      form.campus_id = campusMatch[1];
+      form.campus = campusMatch[2];
+    }
+    
+    // Extract managers
+    const managerMatches = formXml.match(/<manager id="[^"]*">[^<]+<\/manager>/g) || [];
+    if (managerMatches.length > 0) {
+      form.managers = managerMatches.map(m => {
+        const idMatch = m.match(/id="(\d+)"/);
+        const nameMatch = m.match(/>([^<]+)</);
+        return { id: idMatch?.[1], name: nameMatch?.[1] };
+      });
+    }
+    
+    // Extract creator/modifier
+    const creatorMatch = formXml.match(/<creator id="(\d+)">([^<]+)<\/creator>/);
+    if (creatorMatch) {
+      form.creator_id = creatorMatch[1];
+      form.creator = creatorMatch[2];
+    }
+    
+    const modifierMatch = formXml.match(/<modifier id="(\d+)">([^<]+)<\/modifier>/);
+    if (modifierMatch) {
+      form.modifier_id = modifierMatch[1];
+      form.modifier = modifierMatch[2];
+    }
+    
+    forms.push(form);
+  }
+  
+  return forms;
+}
+
+/**
+ * Fetch form responses from CCB API
+ */
+function fetchCCBFormResponses(formId) {
+  return new Promise((resolve, reject) => {
+    const auth = Buffer.from(`${CCB_CONFIG.username}:${CCB_CONFIG.password}`).toString('base64');
+    
+    const url = `https://${CCB_CONFIG.subdomain}.ccbchurch.com/api.php?srv=form_responses&form_id=${formId}`;
+    const urlObj = new URL(url);
+    
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Accept': 'application/xml'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          resolve(parseCCBFormResponsesXML(data));
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    req.end();
+  });
+}
+
+/**
+ * Parse CCB form responses XML
+ */
+function parseCCBFormResponsesXML(xml) {
+  const responses = [];
+  const responseMatches = xml.match(/<form_response id="[^"]*">[\s\S]*?<\/form_response>/g) || [];
+  
+  for (const respXml of responseMatches) {
+    const response = {};
+    
+    // Extract ID
+    const idMatch = respXml.match(/<form_response id="(\d+)">/);
+    if (idMatch) response.id = idMatch[1];
+    
+    // Extract form ID
+    const formIdMatch = respXml.match(/<form id="(\d+)"\/>/);
+    if (formIdMatch) response.form_id = formIdMatch[1];
+    
+    // Extract individual
+    const individualMatch = respXml.match(/<individual id="(\d+)">([^<]+)<\/individual>/);
+    if (individualMatch) {
+      response.individual_id = individualMatch[1];
+      response.individual = individualMatch[2];
+    }
+    
+    // Extract simple fields
+    const fields = ['amount_due', 'confirmation_code', 'created', 'modified'];
+    for (const field of fields) {
+      const match = respXml.match(new RegExp(`<${field}>([^<]*)<\\/${field}>`));
+      if (match) response[field] = match[1];
+    }
+    
+    // Extract profile fields
+    response.profile = {};
+    const profileMatches = respXml.match(/<profile_info id="[^"]*" name="[^"]*">[^<]*<\/profile_info>/g) || [];
+    for (const pf of profileMatches) {
+      const nameMatch = pf.match(/name="([^"]+)"/);
+      const valueMatch = pf.match(/>([^<]*)</);
+      if (nameMatch && valueMatch) {
+        response.profile[nameMatch[1]] = valueMatch[1];
+      }
+    }
+    
+    // Extract answers - parse the answers section more carefully
+    response.answers = [];
+    const answersMatch = respXml.match(/<answers>([\s\S]*?)<\/answers>/);
+    if (answersMatch) {
+      const answersXml = answersMatch[1];
+      
+      // Split by title tags to get each question-answer pair
+      const titleMatches = answersXml.split(/<title>/);
+      
+      for (let i = 1; i < titleMatches.length; i++) {
+        const chunk = titleMatches[i];
+        const titleEnd = chunk.indexOf('</title>');
+        if (titleEnd === -1) continue;
+        
+        const title = chunk.substring(0, titleEnd).trim();
+        const rest = chunk.substring(titleEnd);
+        
+        // Get answer value
+        const valueMatch = rest.match(/<answer_value>([^<]*)<\/answer_value>/);
+        const choiceMatch = rest.match(/<choice id="\d+">([^<]*)<\/choice>/);
+        const optionMatch = rest.match(/<option id="\d+">([^<]*)<\/option>/);
+        
+        let value = '';
+        if (valueMatch && valueMatch[1]) value = valueMatch[1];
+        else if (choiceMatch && choiceMatch[1]) value = choiceMatch[1];
+        else if (optionMatch && optionMatch[1]) value = optionMatch[1];
+        
+        if (title) {
+          response.answers.push({ question: title, answer: value });
+        }
+      }
+    }
+    
+    // Extract creator/modifier
+    const creatorMatch = respXml.match(/<creator id="(\d+)">([^<]+)<\/creator>/);
+    if (creatorMatch) {
+      response.creator_id = creatorMatch[1];
+      response.creator = creatorMatch[2];
+    }
+    
+    const modifierMatch = respXml.match(/<modifier id="(\d+)">([^<]+)<\/modifier>/);
+    if (modifierMatch) {
+      response.modifier_id = modifierMatch[1];
+      response.modifier = modifierMatch[2];
+    }
+    
+    responses.push(response);
+  }
+  
+  return responses;
+}
+
+// CCB Forms list API endpoint
+app.get('/api/ccb/forms', async (req, res) => {
+  try {
+    const forms = await fetchCCBForms();
+    
+    // Sort by title
+    forms.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    
+    res.json({
+      success: true,
+      count: forms.length,
+      forms: forms
+    });
+  } catch (err) {
+    console.error('CCB Forms API error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// CCB Form responses API endpoint
+app.get('/api/ccb/forms/:formId/responses', async (req, res) => {
+  try {
+    const formId = req.params.formId;
+    const responses = await fetchCCBFormResponses(formId);
+    
+    // Sort by created date (newest first)
+    responses.sort((a, b) => new Date(b.created) - new Date(a.created));
+    
+    res.json({
+      success: true,
+      form_id: formId,
+      count: responses.length,
+      responses: responses
+    });
+  } catch (err) {
+    console.error('CCB Form Responses API error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Serve forms directory page
+app.get('/forms', (req, res) => {
+  res.sendFile(path.join(__dirname, 'marketing', 'forms.html'));
+});
+
+// ============================================
 // STATIC FILE SERVING (Production)
 // ============================================
 // Serve the built frontend in production
@@ -4248,7 +4891,7 @@ if (fs.existsSync(distPath)) {
   
   // Handle client-side routing - serve index.html for all non-API routes
   app.get('/{*path}', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/print')) {
+    if (req.path.startsWith('/api') || req.path.startsWith('/print') || req.path === '/events') {
       return next();
     }
     res.sendFile(path.join(distPath, 'index.html'));
@@ -4258,6 +4901,70 @@ if (fs.existsSync(distPath)) {
 } else {
   console.log('⚠️ Dist path not found:', distPath);
 }
+
+// ============================================
+// PRINTER UTILITIES API
+// ============================================
+
+// Get list of available printers
+app.get('/api/printers', async (req, res) => {
+  try {
+    const printers = await getAvailablePrinters();
+    res.json({ 
+      success: true, 
+      platform: process.platform,
+      printers: printers 
+    });
+  } catch (err) {
+    console.error('Error listing printers:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Test print endpoint - prints a simple test label
+app.post('/api/print-test', async (req, res) => {
+  try {
+    // Create a simple test label
+    const canvas = createCanvas(LABEL_WIDTH, LABEL_HEIGHT);
+    const ctx = canvas.getContext('2d');
+    
+    // White background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
+    
+    // Border
+    ctx.strokeStyle = '#4F46E5';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(10, 10, LABEL_WIDTH - 20, LABEL_HEIGHT - 20);
+    
+    // Test text
+    ctx.fillStyle = '#1F2937';
+    ctx.font = 'bold 80px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('TEST PRINT', LABEL_WIDTH / 2, LABEL_HEIGHT / 2 - 40);
+    
+    ctx.font = '40px Arial';
+    ctx.fillText('ChurchCheck Label Printer', LABEL_WIDTH / 2, LABEL_HEIGHT / 2 + 40);
+    
+    ctx.font = '30px Arial';
+    ctx.fillStyle = '#6B7280';
+    ctx.fillText(new Date().toLocaleString(), LABEL_WIDTH / 2, LABEL_HEIGHT / 2 + 100);
+    
+    const imageBuffer = canvas.toBuffer('image/png');
+    const tempPath = path.join(__dirname, 'temp-test-label.png');
+    fs.writeFileSync(tempPath, imageBuffer);
+    
+    if (DISABLE_PRINTING) {
+      return res.json({ success: true, message: 'Test label generated (printing disabled)', printDisabled: true });
+    }
+    
+    const result = await printToLabel(tempPath);
+    res.json({ success: true, message: 'Test label printed!', platform: process.platform });
+  } catch (err) {
+    console.error('Error printing test label:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ============================================
 // START SERVER

@@ -4,13 +4,17 @@ import React, { useState, useEffect } from 'react';
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 // ============================================
-// AVATAR SYSTEM - Single explorer character
+// AVATAR SYSTEM - Gender-based explorer characters
 // ============================================
-const AVATAR_STATIC = '/avatars/boy-ranger/boy-test-000.png';
 const DEFAULT_AVATAR = 'explorer';
 
-// Get avatar URL - returns the static PNG for all avatars
-const getAvatarUrl = () => AVATAR_STATIC;
+// Get avatar URL based on gender
+const getAvatarUrl = (gender) => {
+  const isFemale = gender?.toLowerCase() === 'female' || gender?.toLowerCase() === 'f';
+  const folder = isFemale ? 'girl-ranger' : 'boy-ranger';
+  const prefix = isFemale ? 'girl-test' : 'boy-test';
+  return `/avatars/${folder}/${prefix}-000.png`;
+};
 
 // Calculate age from birthday
 const calculateAge = (birthday) => {
@@ -1058,7 +1062,7 @@ function DashboardTab({ token }) {
                 <div key={kid.id} className="flex items-center gap-4 bg-slate-700/50 rounded-lg p-3">
                   <span className="text-2xl font-bold text-slate-500 w-8">#{i + 1}</span>
                 <img 
-                  src={getAvatarUrl()} 
+                  src={getAvatarUrl(kid.gender)} 
                   alt={kid.name}
                   className="w-10 h-10 rounded-full bg-slate-600"
                 />
@@ -1824,7 +1828,7 @@ function FamiliesTab({ token }) {
                 {/* Avatar preview */}
                 <div className="mb-3">
                   <p className="text-slate-300 text-sm mb-2">Avatar:</p>
-                  <img src={getAvatarUrl()} alt="Avatar" className="w-12 h-12 rounded-lg" />
+                  <img src={getAvatarUrl(childForm.gender)} alt="Avatar" className="w-12 h-12 rounded-lg" />
                 </div>
                 {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
                 <div className="flex gap-2">
@@ -1931,7 +1935,7 @@ function FamiliesTab({ token }) {
                       {/* Avatar preview */}
                       <div className="mb-3">
                         <p className="text-slate-300 text-sm mb-2">Avatar:</p>
-                        <img src={getAvatarUrl()} alt="Avatar" className="w-12 h-12 rounded-lg" />
+                        <img src={getAvatarUrl(editForm.gender)} alt="Avatar" className="w-12 h-12 rounded-lg" />
                       </div>
                       
                       {/* Pending Rewards Section */}
@@ -2063,7 +2067,7 @@ function FamiliesTab({ token }) {
                     <>
                       <div className="flex items-center gap-4">
                         <img 
-                          src={getAvatarUrl()} 
+                          src={getAvatarUrl(child.gender)} 
                           alt={child.name}
                           className="w-14 h-14 rounded-full bg-slate-600"
                         />
@@ -3158,7 +3162,7 @@ function VolunteersTab({ token }) {
                     <label className="block text-slate-400 text-sm mb-2">Avatar</label>
                     <div className="flex items-center gap-4">
                       <img
-                        src={getAvatarUrl()}
+                        src={getAvatarUrl(volunteerForm.gender)}
                         alt=""
                         className="w-16 h-16 rounded-xl"
                       />
@@ -3594,7 +3598,7 @@ function RewardsTab({ token }) {
                 {stats.recentEarned.map((earned, i) => (
                   <div key={i} className="flex items-center gap-3 bg-slate-700/50 rounded-lg p-3">
                     <img 
-                      src={getAvatarUrl()} 
+                      src={getAvatarUrl(earned.gender)} 
                       alt={earned.child_name}
                       className="w-8 h-8 rounded-full bg-slate-600"
                     />

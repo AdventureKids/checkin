@@ -4,13 +4,17 @@ import React, { useState } from 'react';
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 // ============================================
-// AVATAR SYSTEM - Single explorer character
+// AVATAR SYSTEM - Gender-based explorer characters
 // ============================================
-const AVATAR_STATIC = '/avatars/boy-ranger/boy-test-000.png';
 const DEFAULT_AVATAR = 'explorer'; // ID used in database
 
-// Get avatar URL - returns the static PNG for all avatars
-const getAvatarUrl = () => AVATAR_STATIC;
+// Get avatar URL based on gender
+const getAvatarUrl = (gender) => {
+  const isFemale = gender?.toLowerCase() === 'female' || gender?.toLowerCase() === 'f';
+  const folder = isFemale ? 'girl-ranger' : 'boy-ranger';
+  const prefix = isFemale ? 'girl-test' : 'boy-test';
+  return `/avatars/${folder}/${prefix}-000.png`;
+};
 
 export default function Register() {
   const [step, setStep] = useState(1);
@@ -506,7 +510,7 @@ export default function Register() {
               
               <div className="flex flex-col items-center mb-8">
                 <img 
-                  src={getAvatarUrl()} 
+                  src={getAvatarUrl(family.children[0]?.gender)} 
                   alt="Adventure Kid Avatar"
                   className="w-40 h-40 mb-4"
                 />
@@ -520,7 +524,7 @@ export default function Register() {
                 {family.children.map((child, childIndex) => (
                   <div key={childIndex} className="flex items-center gap-4 bg-gray-50 rounded-xl p-4">
                     <img 
-                      src={getAvatarUrl()} 
+                      src={getAvatarUrl(child.gender)} 
                       alt={`${child.firstName}'s avatar`}
                       className="w-16 h-16 rounded-lg"
                     />
@@ -576,7 +580,7 @@ export default function Register() {
                     {family.children.map((child, index) => (
                       <div key={index} className="flex items-center gap-3 bg-white rounded-lg p-3">
                         <img 
-                          src={getAvatarUrl()} 
+                          src={getAvatarUrl(child.gender)} 
                           alt={child.firstName}
                           className="w-12 h-12 rounded-xl border-2 border-emerald-300"
                         />
