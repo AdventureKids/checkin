@@ -11,6 +11,7 @@
     "dev": "vite",
     "build": "vite build",
     "start": "node print-server.cjs",
+    "start:cloud": "node server-cloud.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
@@ -20,10 +21,11 @@
     "electron:build:all": "npm run build && electron-builder --mac --win"
   },
   "dependencies": {
-    "better-sqlite3": "^12.5.0",
-    "canvas": "^3.2.0",
+    "better-sqlite3": "^12.6.2",
+    "canvas": "^3.2.1",
     "cors": "^2.8.5",
     "express": "^5.2.1",
+    "pg": "^8.18.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.10.1"
@@ -86,7 +88,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "hardenedRuntime": true,
@@ -112,7 +117,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -125,7 +132,10 @@
     },
     "linux": {
       "icon": "electron/icons",
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Utility"
     }
   }
