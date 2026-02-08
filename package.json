@@ -2,7 +2,7 @@
   "name": "churchcheck",
   "productName": "ChurchCheck",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Kids check-in that makes them want to come back",
   "author": "ChurchCheck",
   "type": "module",
@@ -60,28 +60,7 @@
       "!electron/icons/*.iconset",
       "!electron/icons/*.ico.png"
     ],
-    "extraResources": [
-      {
-        "from": "print-server.cjs",
-        "to": "server/print-server.cjs"
-      },
-      {
-        "from": "kidcheck.db",
-        "to": "server/kidcheck.db"
-      },
-      {
-        "from": "public",
-        "to": "server/public"
-      },
-      {
-        "from": "node_modules",
-        "to": "server/node_modules"
-      }
-    ],
     "asar": true,
-    "asarUnpack": [
-      "node_modules/better-sqlite3/**/*"
-    ],
     "mac": {
       "category": "public.app-category.utilities",
       "icon": "electron/icons/icon.icns",

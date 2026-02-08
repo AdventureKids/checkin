@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upcoming Events | Calvary Chapel East Anaheim</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0f1c;
+      --bg-secondary: #111827;
+      --bg-card: #1a2234;
+      --bg-card-hover: #232d42;
+      --accent-primary: #3b82f6;
+      --accent-secondary: #8b5cf6;
+      --accent-warm: #f59e0b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-subtle: rgba(148, 163, 184, 0.1);
+      --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      --gradient-warm: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+      --gradient-cool: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      --shadow-glow: 0 0 60px rgba(59, 130, 246, 0.15);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* Animated background */
+    .bg-pattern {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(139, 92, 246, 0.1), transparent),
+        radial-gradient(ellipse 50% 30% at 0% 100%, rgba(6, 182, 212, 0.08), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    header {
+      padding: 40px 0 60px;
+      text-align: center;
+    }
+
+    .church-name {
+      font-family: 'Fraunces', serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--accent-primary);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-bottom: 16px;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease forwards;
+    }
+
+    h1 {
+      font-family: 'Fraunces', serif;
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 700;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.1s forwards;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 500px;
+      margin: 0 auto;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.2s forwards;
+    }
+
+    /* Filters */
+    .filters {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.3s forwards;
+    }
+
+    .filter-btn {
+      padding: 10px 20px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      border-radius: 100px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .filter-btn:hover {
+      border-color: var(--accent-primary);
+      color: var(--text-primary);
+      background: var(--bg-card-hover);
+    }
+
+    .filter-btn.active {
+      background: var(--gradient-primary);
+      border-color: transparent;
+      color: white;
+    }
+
+    /* View Toggle */
+    .view-toggle {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 32px;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.35s forwards;
+    }
+
+    .view-btn {
+      padding: 8px 16px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .view-btn:hover {
+      color: var(--text-secondary);
+    }
+
+    .view-btn.active {
+      color: var(--accent-primary);
+    }
+
+    .view-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Loading State */
+    .loading {
+      text-align: center;
+      padding: 80px 20px;
+    }
+
+    .loader {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--border-subtle);
+      border-top-color: var(--accent-primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    /* Events Grid */
+    .events-container {
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.4s forwards;
+    }
+
+    /* Date Section */
+    .date-section {
+      margin-bottom: 48px;
+    }
+
+    .date-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .date-badge {
+      background: var(--gradient-primary);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 12px;
+      text-align: center;
+      min-width: 70px;
+    }
+
+    .date-badge .day {
+      font-family: 'Fraunces', serif;
+      font-size: 1.75rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .date-badge .month {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.9;
+    }
+
+    .date-info h2 {
+      font-family: 'Fraunces', serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .date-info .weekday {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    /* Event Card */
+    .events-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .event-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 24px;
+      align-items: center;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .event-card:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .event-time {
+      text-align: center;
+      min-width: 80px;
+    }
+
+    .event-time .time {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .event-time .duration {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .event-details h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .event-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .event-meta span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .event-meta svg {
+      width: 16px;
+      height: 16px;
+      opacity: 0.7;
+    }
+
+    .event-group {
+      display: inline-block;
+      padding: 6px 14px;
+      background: rgba(139, 92, 246, 0.15);
+      color: #a78bfa;
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    /* Grid View */
+    .events-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+    }
+
+    .events-grid .event-card {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .events-grid .event-card-header {
+      background: var(--gradient-cool);
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .events-grid .event-date-time {
+      color: white;
+    }
+
+    .events-grid .event-date-time .date {
+      font-family: 'Fraunces', serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .events-grid .event-date-time .time {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+
+    .events-grid .event-card-body {
+      padding: 0 24px 24px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .events-grid .event-details {
+      flex: 1;
+    }
+
+    .events-grid .event-details h3 {
+      font-size: 1.2rem;
+      margin-bottom: 12px;
+    }
+
+    .events-grid .event-description {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+    }
+
+    .empty-icon {
+      font-size: 4rem;
+      margin-bottom: 20px;
+      opacity: 0.5;
+    }
+
+    .empty-state h3 {
+      font-family: 'Fraunces', serif;
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+      color: var(--text-primary);
+    }
+
+    .empty-state p {
+      color: var(--text-secondary);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+      opacity: 1;
+    }
+
+    .modal {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 24px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      transform: translateY(20px);
+      transition: transform 0.3s ease;
+    }
+
+    .modal-overlay.show .modal {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      background: var(--gradient-primary);
+      padding: 32px;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease;
+    }
+
+    .modal-close:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .modal-header h2 {
+      font-family: 'Fraunces', serif;
+      font-size: 1.75rem;
+      color: white;
+      margin-bottom: 12px;
+      padding-right: 40px;
+    }
+
+    .modal-header-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.95rem;
+    }
+
+    .modal-header-meta span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .modal-body {
+      padding: 32px;
+    }
+
+    .modal-section {
+      margin-bottom: 24px;
+    }
+
+    .modal-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .modal-section h4 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .modal-section p {
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    .modal-resources {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .resource-tag {
+      padding: 6px 12px;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-primary);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: var(--accent-primary);
+      text-decoration: none;
+    }
+
+    /* Animations */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .event-card {
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      .event-time {
+        text-align: left;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .event-group {
+        align-self: flex-start;
+      }
+
+      .date-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .events-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-pattern"></div>
+  
+  <div class="container">
+    <header>
+      <div class="church-name">Calvary Chapel East Anaheim</div>
+      <h1>Upcoming Events</h1>
+      <p class="subtitle">Join us for worship, fellowship, and community. There's always something happening!</p>
+    </header>
+
+    <div class="filters" id="filters">
+      <button class="filter-btn active" data-filter="all">All Events</button>
+      <!-- Filters will be populated dynamically -->
+    </div>
+
+    <div class="view-toggle">
+      <button class="view-btn active" data-view="list" onclick="setView('list')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        List
+      </button>
+      <button class="view-btn" data-view="grid" onclick="setView('grid')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-5a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-5a1 1 0 01-1-1v-4z"/>
+        </svg>
+        Grid
+      </button>
+    </div>
+
+    <div id="events-container" class="events-container">
+      <div class="loading">
+        <div class="loader"></div>
+        <p style="color: var(--text-secondary);">Loading events...</p>
+      </div>
+    </div>
+
+    <footer>
+      <p>5605 E. La Palma Ave, Anaheim, CA 92807</p>
+      <p style="margin-top: 8px;">Powered by <a href="#">ChurchCheck</a></p>
+    </footer>
+  </div>
+
+  <!-- Event Detail Modal -->
+  <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <h2 id="modal-title">Event Title</h2>
+        <div class="modal-header-meta">
+          <span id="modal-date">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:18px;height:18px">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            Date
+          </span>
+          <span id="modal-time">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:18px;height:18px">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Time
+          </span>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section" id="modal-location-section">
+          <h4>📍 Location</h4>
+          <p id="modal-location">Location details</p>
+        </div>
+        <div class="modal-section" id="modal-group-section">
+          <h4>⛪ Ministry / Group</h4>
+          <p id="modal-group">Group name</p>
+        </div>
+        <div class="modal-section" id="modal-description-section">
+          <h4>📝 Description</h4>
+          <p id="modal-description">Event description</p>
+        </div>
+        <div class="modal-section" id="modal-registration-section">
+          <h4>🎟️ Registration</h4>
+          <p id="modal-registration">Registration info</p>
+        </div>
+        <div class="modal-section" id="modal-recurrence-section">
+          <h4>🔄 Recurrence</h4>
+          <p id="modal-recurrence">Recurrence pattern</p>
+        </div>
+        <div class="modal-section" id="modal-setup-section">
+          <h4>🛠️ Setup Information</h4>
+          <p id="modal-setup">Setup details</p>
+        </div>
+        <div class="modal-section" id="modal-resources-section">
+          <h4>🏢 Resources / Rooms</h4>
+          <div class="modal-resources" id="modal-resources"></div>
+        </div>
+        <div class="modal-section" id="modal-organizer-section">
+          <h4>👤 Organizer</h4>
+          <p id="modal-organizer">Organizer name</p>
+        </div>
+        <div class="modal-section" id="modal-meta-section">
+          <h4>ℹ️ Event Details</h4>
+          <div id="modal-meta" style="font-size: 0.85rem; color: var(--text-muted);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allEvents = [];
+    let currentFilter = 'all';
+    let currentView = 'list';
+
+    // Fetch events from API
+    async function fetchEvents() {
+      try {
+        const response = await fetch('/api/ccb/events/calendar?days=90');
+        const data = await response.json();
+        
+        if (data.success && data.calendar) {
+          // Flatten calendar into events array
+          allEvents = [];
+          for (const [date, events] of Object.entries(data.calendar)) {
+            allEvents.push(...events);
+          }
+          
+          // Populate filters based on unique groups
+          populateFilters();
+          renderEvents();
+        } else {
+          showError('Failed to load events');
+        }
+      } catch (err) {
+        console.error('Error fetching events:', err);
+        showError('Unable to connect to server');
+      }
+    }
+
+    // Populate filter buttons based on event groups
+    function populateFilters() {
+      const groups = new Set();
+      allEvents.forEach(e => {
+        if (e.group_name) groups.add(e.group_name);
+      });
+
+      const filtersEl = document.getElementById('filters');
+      const sortedGroups = Array.from(groups).sort();
+      
+      // Only show top groups to avoid clutter
+      const topGroups = sortedGroups.slice(0, 8);
+      
+      topGroups.forEach(group => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn';
+        btn.dataset.filter = group;
+        btn.textContent = group;
+        btn.onclick = () => setFilter(group, btn);
+        filtersEl.appendChild(btn);
+      });
+    }
+
+    // Set active filter
+    function setFilter(filter, btn) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      else document.querySelector('.filter-btn[data-filter="all"]')?.classList.add('active');
+      renderEvents();
+    }
+
+    // Set view mode
+    function setView(view) {
+      currentView = view;
+      document.querySelectorAll('.view-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === view);
+      });
+      renderEvents();
+    }
+
+    // Group events by date
+    function groupByDate(events) {
+      const grouped = {};
+      events.forEach(e => {
+        const dateKey = e.start_datetime?.split(' ')[0];
+        if (!dateKey) return;
+        if (!grouped[dateKey]) grouped[dateKey] = [];
+        grouped[dateKey].push(e);
+      });
+      return grouped;
+    }
+
+    // Format date for display
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      const day = date.getDate();
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
+      const fullDate = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      return { day, month, weekday, fullDate };
+    }
+
+    // Calculate duration
+    function getDuration(startTime, endTime) {
+      if (!startTime || !endTime) return '';
+      // Simple duration text
+      return `${startTime} - ${endTime}`;
+    }
+
+    // Strip HTML tags
+    function stripHtml(html) {
+      if (!html) return '';
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      return temp.textContent || temp.innerText || '';
+    }
+
+    // Render events
+    function renderEvents() {
+      const container = document.getElementById('events-container');
+      
+      // Filter events
+      let filtered = allEvents;
+      if (currentFilter !== 'all') {
+        filtered = allEvents.filter(e => e.group_name === currentFilter);
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">📅</div>
+            <h3>No Upcoming Events</h3>
+            <p>Check back soon for new events and activities!</p>
+          </div>
+        `;
+        return;
+      }
+
+      if (currentView === 'list') {
+        renderListView(container, filtered);
+      } else {
+        renderGridView(container, filtered);
+      }
+    }
+
+    // Render list view
+    function renderListView(container, events) {
+      const grouped = groupByDate(events);
+      const sortedDates = Object.keys(grouped).sort();
+      
+      let html = '';
+      
+      sortedDates.forEach(dateKey => {
+        const dateInfo = formatDate(dateKey);
+        const dayEvents = grouped[dateKey];
+        
+        html += `
+          <div class="date-section">
+            <div class="date-header">
+              <div class="date-badge">
+                <div class="day">${dateInfo.day}</div>
+                <div class="month">${dateInfo.month}</div>
+              </div>
+              <div class="date-info">
+                <h2>${dateInfo.fullDate}</h2>
+                <div class="weekday">${dateInfo.weekday}</div>
+              </div>
+            </div>
+            <div class="events-list">
+        `;
+        
+        dayEvents.forEach(event => {
+          const locationName = event.location?.name || '';
+          html += `
+            <div class="event-card" onclick="showEventDetails(${JSON.stringify(event).replace(/"/g, '&quot;')})">
+              <div class="event-time">
+                <div class="time">${event.start_time || 'TBD'}</div>
+                <div class="duration">${event.end_time ? `to ${event.end_time}` : ''}</div>
+              </div>
+              <div class="event-details">
+                <h3>${event.name || 'Untitled Event'}</h3>
+                <div class="event-meta">
+                  ${locationName ? `
+                    <span>
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      </svg>
+                      ${locationName}
+                    </span>
+                  ` : ''}
+                  ${event.organizer ? `
+                    <span>
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                      </svg>
+                      ${event.organizer}
+                    </span>
+                  ` : ''}
+                </div>
+              </div>
+              ${event.group_name ? `<div class="event-group">${event.group_name}</div>` : ''}
+            </div>
+          `;
+        });
+        
+        html += `
+            </div>
+          </div>
+        `;
+      });
+      
+      container.innerHTML = html;
+    }
+
+    // Render grid view
+    function renderGridView(container, events) {
+      let html = '<div class="events-grid">';
+      
+      events.forEach(event => {
+        const dateInfo = event.start_datetime ? formatDate(event.start_datetime.split(' ')[0]) : { fullDate: 'TBD' };
+        const locationName = event.location?.name || '';
+        const description = stripHtml(event.description);
+        
+        html += `
+          <div class="event-card" onclick="showEventDetails(${JSON.stringify(event).replace(/"/g, '&quot;')})">
+            <div class="event-card-header">
+              <div class="event-date-time">
+                <div class="date">${dateInfo.fullDate}</div>
+                <div class="time">${event.start_time || 'TBD'}${event.end_time ? ` - ${event.end_time}` : ''}</div>
+              </div>
+              ${event.group_name ? `<div class="event-group" style="background: rgba(255,255,255,0.2); color: white;">${event.group_name}</div>` : ''}
+            </div>
+            <div class="event-card-body">
+              <div class="event-details">
+                <h3>${event.name || 'Untitled Event'}</h3>
+                ${description ? `<p class="event-description">${description}</p>` : ''}
+                <div class="event-meta">
+                  ${locationName ? `
+                    <span>
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      </svg>
+                      ${locationName}
+                    </span>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    // Show event details modal
+    function showEventDetails(event) {
+      const overlay = document.getElementById('modal-overlay');
+      
+      document.getElementById('modal-title').textContent = event.name || 'Event Details';
+      
+      const dateInfo = event.start_datetime ? formatDate(event.start_datetime.split(' ')[0]) : { fullDate: 'TBD' };
+      document.getElementById('modal-date').innerHTML = `
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:18px;height:18px">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        ${dateInfo.fullDate}
+      `;
+      
+      document.getElementById('modal-time').innerHTML = `
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:18px;height:18px">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        ${event.start_time || 'TBD'}${event.end_time ? ` - ${event.end_time}` : ''}
+      `;
+      
+      // Location
+      const locSection = document.getElementById('modal-location-section');
+      if (event.location?.name) {
+        let locText = `<strong>${event.location.name}</strong>`;
+        if (event.location.street_address) {
+          locText += `<br>${event.location.street_address}`;
+          if (event.location.city) {
+            locText += `<br>${event.location.city}, ${event.location.state} ${event.location.zip}`;
+          }
+        }
+        document.getElementById('modal-location').innerHTML = locText;
+        locSection.style.display = 'block';
+      } else {
+        locSection.style.display = 'none';
+      }
+      
+      // Group
+      const groupSection = document.getElementById('modal-group-section');
+      if (event.group_name) {
+        document.getElementById('modal-group').textContent = event.group_name;
+        groupSection.style.display = 'block';
+      } else {
+        groupSection.style.display = 'none';
+      }
+      
+      // Description
+      const descSection = document.getElementById('modal-description-section');
+      const description = stripHtml(event.description);
+      if (description) {
+        document.getElementById('modal-description').textContent = description;
+        descSection.style.display = 'block';
+      } else {
+        descSection.style.display = 'none';
+      }
+      
+      // Registration
+      const regSection = document.getElementById('modal-registration-section');
+      if (event.registration) {
+        let regText = event.registration.type || 'Open';
+        if (event.registration.limit > 0) {
+          regText += ` (Limit: ${event.registration.limit} people)`;
+        }
+        document.getElementById('modal-registration').textContent = regText;
+        regSection.style.display = 'block';
+      } else {
+        regSection.style.display = 'none';
+      }
+      
+      // Recurrence
+      const recSection = document.getElementById('modal-recurrence-section');
+      if (event.recurrence_description) {
+        document.getElementById('modal-recurrence').textContent = event.recurrence_description;
+        recSection.style.display = 'block';
+      } else {
+        recSection.style.display = 'none';
+      }
+      
+      // Setup
+      const setupSection = document.getElementById('modal-setup-section');
+      if (event.setup && (event.setup.start || event.setup.notes)) {
+        let setupText = '';
+        if (event.setup.start && event.setup.end) {
+          const setupStart = new Date(event.setup.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          const setupEnd = new Date(event.setup.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          setupText = `Setup: ${setupStart} - ${setupEnd}`;
+        }
+        if (event.setup.notes) {
+          setupText += setupText ? `<br><br>${event.setup.notes}` : event.setup.notes;
+        }
+        document.getElementById('modal-setup').innerHTML = setupText;
+        setupSection.style.display = 'block';
+      } else {
+        setupSection.style.display = 'none';
+      }
+      
+      // Resources
+      const resSection = document.getElementById('modal-resources-section');
+      if (event.resources?.length > 0) {
+        document.getElementById('modal-resources').innerHTML = event.resources
+          .map(r => {
+            const typeIcon = r.type === 'Location' ? '🏢' : '🔧';
+            const statusColor = r.status === 'Approved' ? 'var(--accent-primary)' : 'var(--accent-warm)';
+            const hasNotes = r.description && r.description.trim();
+            return `<div class="resource-item" style="
+              background: rgba(59, 130, 246, 0.1);
+              border-left: 3px solid ${statusColor};
+              border-radius: 8px;
+              padding: 10px 14px;
+              margin-bottom: 8px;
+            ">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>${typeIcon}</span>
+                <strong>${r.name}</strong>
+                ${r.status ? `<span style="opacity:0.6; font-size:0.75rem; margin-left: auto;">${r.status}</span>` : ''}
+              </div>
+              ${hasNotes ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 6px; padding-left: 24px;">📝 ${r.description}</div>` : ''}
+            </div>`;
+          })
+          .join('');
+        resSection.style.display = 'block';
+      } else {
+        resSection.style.display = 'none';
+      }
+      
+      // Organizer
+      const orgSection = document.getElementById('modal-organizer-section');
+      if (event.organizer) {
+        let orgText = event.organizer;
+        if (event.contact_phone) {
+          orgText += ` • ${event.contact_phone}`;
+        }
+        document.getElementById('modal-organizer').textContent = orgText;
+        orgSection.style.display = 'block';
+      } else {
+        orgSection.style.display = 'none';
+      }
+      
+      // Meta information
+      const metaSection = document.getElementById('modal-meta-section');
+      let metaHtml = '';
+      if (event.approval_status) {
+        const statusColor = event.approval_status === 'Approved' ? '#22c55e' : '#f59e0b';
+        metaHtml += `<div style="margin-bottom: 4px;">Status: <span style="color: ${statusColor}">${event.approval_status}</span></div>`;
+      }
+      if (event.timezone) {
+        metaHtml += `<div style="margin-bottom: 4px;">Timezone: ${event.timezone}</div>`;
+      }
+      if (event.creator) {
+        metaHtml += `<div style="margin-bottom: 4px;">Created by: ${event.creator}</div>`;
+      }
+      if (event.created) {
+        metaHtml += `<div style="margin-bottom: 4px;">Created: ${new Date(event.created).toLocaleDateString()}</div>`;
+      }
+      if (event.modifier && event.modifier !== event.creator) {
+        metaHtml += `<div style="margin-bottom: 4px;">Last modified by: ${event.modifier}</div>`;
+      }
+      if (event.modified) {
+        metaHtml += `<div style="margin-bottom: 4px;">Modified: ${new Date(event.modified).toLocaleDateString()}</div>`;
+      }
+      if (event.listed === 'true') {
+        metaHtml += `<div style="margin-bottom: 4px;">📋 Listed on internal calendar</div>`;
+      }
+      if (event.public_calendar_listed === 'true') {
+        metaHtml += `<div style="margin-bottom: 4px;">🌐 Listed on public calendar</div>`;
+      }
+      if (event.id) {
+        metaHtml += `<div style="margin-top: 8px; opacity: 0.5;">Event ID: ${event.id}</div>`;
+      }
+      
+      if (metaHtml) {
+        document.getElementById('modal-meta').innerHTML = metaHtml;
+        metaSection.style.display = 'block';
+      } else {
+        metaSection.style.display = 'none';
+      }
+      
+      overlay.classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+
+    // Close modal
+    function closeModal(e) {
+      if (e && e.target !== document.getElementById('modal-overlay')) return;
+      document.getElementById('modal-overlay').classList.remove('show');
+      document.body.style.overflow = '';
+    }
+
+    // Handle escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Show error
+    function showError(message) {
+      document.getElementById('events-container').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <h3>Oops!</h3>
+          <p>${message}</p>
+        </div>
+      `;
+    }
+
+    // Initialize
+    fetchEvents();
+  </script>
+</body>
+</html>
+

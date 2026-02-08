@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forms & Responses | Calvary Chapel East Anaheim</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0f1c;
+      --bg-secondary: #111827;
+      --bg-card: #1a2234;
+      --bg-card-hover: #232d42;
+      --bg-table-row: #1e293b;
+      --bg-table-row-alt: #1a2234;
+      --accent-primary: #3b82f6;
+      --accent-secondary: #8b5cf6;
+      --accent-success: #22c55e;
+      --accent-warning: #f59e0b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-subtle: rgba(148, 163, 184, 0.1);
+      --gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+      --gradient-cool: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .bg-pattern {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.15), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(236, 72, 153, 0.1), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    header {
+      padding: 40px 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .header-left {
+      opacity: 0;
+      animation: fadeInUp 0.6s ease forwards;
+    }
+
+    .church-name {
+      font-family: 'Fraunces', serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent-secondary);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-family: 'Fraunces', serif;
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.1s forwards;
+    }
+
+    .back-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-primary);
+    }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 80px 20px;
+    }
+
+    .loader {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--border-subtle);
+      border-top-color: var(--accent-secondary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Forms List View */
+    #forms-list {
+      opacity: 0;
+      animation: fadeInUp 0.6s ease 0.2s forwards;
+    }
+
+    .forms-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 60px;
+    }
+
+    .form-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 24px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .form-card:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(139, 92, 246, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .form-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .form-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+    }
+
+    .form-status {
+      padding: 4px 10px;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .form-status.available {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--accent-success);
+    }
+
+    .form-status.unpublished {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--accent-warning);
+    }
+
+    .form-status.archived {
+      background: rgba(100, 116, 139, 0.15);
+      color: var(--text-muted);
+    }
+
+    .form-description {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .form-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .form-meta span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Responses View */
+    #responses-view {
+      display: none;
+    }
+
+    .responses-header {
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .responses-header h2 {
+      font-family: 'Fraunces', serif;
+      font-size: 1.75rem;
+      margin-bottom: 8px;
+    }
+
+    .responses-meta {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .responses-count {
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    /* Table Styles */
+    .table-container {
+      overflow-x: auto;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      margin-bottom: 60px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead {
+      background: var(--bg-secondary);
+      position: sticky;
+      top: 0;
+    }
+
+    th {
+      padding: 16px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      border-bottom: 2px solid var(--border-subtle);
+    }
+
+    th:first-child {
+      border-radius: 16px 0 0 0;
+    }
+
+    th:last-child {
+      border-radius: 0 16px 0 0;
+    }
+
+    td {
+      padding: 14px 16px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-subtle);
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    tr:nth-child(even) {
+      background: var(--bg-table-row-alt);
+    }
+
+    tr:hover {
+      background: var(--bg-card-hover);
+    }
+
+    td.individual-name {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    td.email a {
+      color: var(--accent-primary);
+      text-decoration: none;
+    }
+
+    td.email a:hover {
+      text-decoration: underline;
+    }
+
+    .answer-cell {
+      max-width: 200px;
+    }
+
+    .answer-value {
+      display: inline-block;
+      padding: 4px 10px;
+      background: rgba(139, 92, 246, 0.1);
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+
+    .date-cell {
+      white-space: nowrap;
+      font-size: 0.85rem;
+    }
+
+    /* Export Button */
+    .export-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: var(--gradient-primary);
+      border: none;
+      color: white;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-left: auto;
+    }
+
+    .export-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.3);
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+      font-family: 'Fraunces', serif;
+      font-size: 1.5rem;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+      .forms-grid {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .table-container {
+        border-radius: 8px;
+      }
+
+      th, td {
+        padding: 10px 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-pattern"></div>
+  
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <div class="church-name">Calvary Chapel East Anaheim</div>
+        <h1 id="page-title">Forms & Responses</h1>
+      </div>
+      <a href="/events" class="back-btn">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+        </svg>
+        Back to Events
+      </a>
+    </header>
+
+    <!-- Forms List -->
+    <div id="forms-list">
+      <div class="loading" id="forms-loading">
+        <div class="loader"></div>
+        <p>Loading forms...</p>
+      </div>
+      <div class="forms-grid" id="forms-grid"></div>
+    </div>
+
+    <!-- Responses Table View -->
+    <div id="responses-view">
+      <div class="responses-header">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <button class="back-btn" onclick="showFormsList()" style="margin-bottom: 12px;">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+              </svg>
+              Back to Forms
+            </button>
+            <h2 id="form-title">Form Responses</h2>
+            <div class="responses-meta">
+              <span id="response-count" class="responses-count">0 responses</span>
+              <span id="form-managers"></span>
+            </div>
+          </div>
+          <button class="export-btn" onclick="exportToCSV()">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Export CSV
+          </button>
+        </div>
+      </div>
+      
+      <div class="loading" id="responses-loading" style="display: none;">
+        <div class="loader"></div>
+        <p>Loading responses...</p>
+      </div>
+      
+      <div class="table-container" id="table-container" style="display: none;">
+        <table id="responses-table">
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      
+      <div class="empty-state" id="empty-responses" style="display: none;">
+        <h3>No Responses Yet</h3>
+        <p>This form hasn't received any responses.</p>
+      </div>
+    </div>
+
+    <footer>
+      <p>Powered by ChurchCheck • CCB Integration</p>
+    </footer>
+  </div>
+
+  <script>
+    let allForms = [];
+    let currentFormId = null;
+    let currentResponses = [];
+    let currentFormTitle = '';
+
+    // Fetch all forms
+    async function fetchForms() {
+      try {
+        const response = await fetch('/api/ccb/forms');
+        const data = await response.json();
+        
+        if (data.success) {
+          allForms = data.forms;
+          renderForms();
+        } else {
+          showError('Failed to load forms');
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        showError('Unable to connect to server');
+      }
+    }
+
+    // Strip HTML
+    function stripHtml(html) {
+      if (!html) return '';
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      return temp.textContent || temp.innerText || '';
+    }
+
+    // Render forms grid
+    function renderForms() {
+      document.getElementById('forms-loading').style.display = 'none';
+      const grid = document.getElementById('forms-grid');
+      
+      if (allForms.length === 0) {
+        grid.innerHTML = '<div class="empty-state"><h3>No Forms Found</h3><p>There are no forms in your CCB account.</p></div>';
+        return;
+      }
+
+      grid.innerHTML = allForms.map(form => {
+        const statusClass = (form.status || '').toLowerCase().replace(/\s+/g, '-');
+        const desc = stripHtml(form.description);
+        
+        return `
+          <div class="form-card" onclick="loadFormResponses('${form.id}', '${escapeHtml(form.title)}')">
+            <div class="form-card-header">
+              <h3>${form.title || 'Untitled Form'}</h3>
+              <span class="form-status ${statusClass}">${form.status || 'Unknown'}</span>
+            </div>
+            ${desc ? `<p class="form-description">${desc}</p>` : ''}
+            <div class="form-meta">
+              ${form.managers?.length ? `<span>👤 ${form.managers.map(m => m.name).join(', ')}</span>` : ''}
+              ${form.created ? `<span>📅 Created ${new Date(form.created).toLocaleDateString()}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Escape HTML for safe insertion
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    // Load form responses
+    async function loadFormResponses(formId, formTitle) {
+      currentFormId = formId;
+      currentFormTitle = formTitle;
+      
+      document.getElementById('forms-list').style.display = 'none';
+      document.getElementById('responses-view').style.display = 'block';
+      document.getElementById('responses-loading').style.display = 'block';
+      document.getElementById('table-container').style.display = 'none';
+      document.getElementById('empty-responses').style.display = 'none';
+      
+      document.getElementById('form-title').textContent = formTitle || 'Form Responses';
+      document.getElementById('page-title').textContent = formTitle || 'Form Responses';
+      
+      try {
+        const response = await fetch(`/api/ccb/forms/${formId}/responses`);
+        const data = await response.json();
+        
+        document.getElementById('responses-loading').style.display = 'none';
+        
+        if (data.success) {
+          currentResponses = data.responses;
+          document.getElementById('response-count').textContent = `${data.count} response${data.count !== 1 ? 's' : ''}`;
+          
+          if (data.count > 0) {
+            renderResponsesTable(data.responses);
+            document.getElementById('table-container').style.display = 'block';
+          } else {
+            document.getElementById('empty-responses').style.display = 'block';
+          }
+        } else {
+          showError('Failed to load responses');
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        document.getElementById('responses-loading').style.display = 'none';
+        showError('Unable to load responses');
+      }
+    }
+
+    // Render responses table
+    function renderResponsesTable(responses) {
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+      
+      // Collect all unique questions across all responses
+      const allQuestions = new Set();
+      responses.forEach(r => {
+        (r.answers || []).forEach(a => {
+          if (a.question) allQuestions.add(a.question);
+        });
+      });
+      const questionList = Array.from(allQuestions);
+      
+      // Build header
+      let headerHtml = '<tr>';
+      headerHtml += '<th>Name</th>';
+      headerHtml += '<th>Email</th>';
+      headerHtml += '<th>Phone</th>';
+      questionList.forEach(q => {
+        headerHtml += `<th>${q}</th>`;
+      });
+      headerHtml += '<th>Submitted</th>';
+      headerHtml += '<th>Confirmation</th>';
+      headerHtml += '</tr>';
+      thead.innerHTML = headerHtml;
+      
+      // Build body
+      let bodyHtml = '';
+      responses.forEach(r => {
+        const name = r.individual || `${r.profile?.name_first || ''} ${r.profile?.name_last || ''}`.trim() || 'Unknown';
+        const email = r.profile?.email_primary || '';
+        const phone = formatPhone(r.profile?.phone_mobile || '');
+        const submitted = r.created ? new Date(r.created).toLocaleDateString() : '';
+        
+        // Build answers map
+        const answersMap = {};
+        (r.answers || []).forEach(a => {
+          answersMap[a.question] = a.answer;
+        });
+        
+        bodyHtml += '<tr>';
+        bodyHtml += `<td class="individual-name">${name}</td>`;
+        bodyHtml += `<td class="email">${email ? `<a href="mailto:${email}">${email}</a>` : ''}</td>`;
+        bodyHtml += `<td>${phone}</td>`;
+        
+        questionList.forEach(q => {
+          const answer = answersMap[q] || '';
+          bodyHtml += `<td class="answer-cell">${answer ? `<span class="answer-value">${answer}</span>` : '<span style="opacity:0.3">—</span>'}</td>`;
+        });
+        
+        bodyHtml += `<td class="date-cell">${submitted}</td>`;
+        bodyHtml += `<td>${r.confirmation_code || ''}</td>`;
+        bodyHtml += '</tr>';
+      });
+      
+      tbody.innerHTML = bodyHtml;
+    }
+
+    // Format phone number
+    function formatPhone(phone) {
+      if (!phone) return '';
+      const cleaned = phone.replace(/\D/g, '');
+      if (cleaned.length === 11 && cleaned.startsWith('1')) {
+        return `(${cleaned.slice(1,4)}) ${cleaned.slice(4,7)}-${cleaned.slice(7)}`;
+      } else if (cleaned.length === 10) {
+        return `(${cleaned.slice(0,3)}) ${cleaned.slice(3,6)}-${cleaned.slice(6)}`;
+      }
+      return phone;
+    }
+
+    // Show forms list
+    function showFormsList() {
+      document.getElementById('responses-view').style.display = 'none';
+      document.getElementById('forms-list').style.display = 'block';
+      document.getElementById('page-title').textContent = 'Forms & Responses';
+      currentFormId = null;
+      currentResponses = [];
+    }
+
+    // Export to CSV
+    function exportToCSV() {
+      if (currentResponses.length === 0) return;
+      
+      // Collect all unique questions
+      const allQuestions = new Set();
+      currentResponses.forEach(r => {
+        (r.answers || []).forEach(a => {
+          if (a.question) allQuestions.add(a.question);
+        });
+      });
+      const questionList = Array.from(allQuestions);
+      
+      // Build CSV
+      const headers = ['Name', 'Email', 'Phone', ...questionList, 'Submitted', 'Confirmation Code'];
+      const rows = [headers];
+      
+      currentResponses.forEach(r => {
+        const name = r.individual || `${r.profile?.name_first || ''} ${r.profile?.name_last || ''}`.trim() || '';
+        const email = r.profile?.email_primary || '';
+        const phone = r.profile?.phone_mobile || '';
+        const submitted = r.created || '';
+        
+        const answersMap = {};
+        (r.answers || []).forEach(a => {
+          answersMap[a.question] = a.answer;
+        });
+        
+        const row = [
+          name,
+          email,
+          phone,
+          ...questionList.map(q => answersMap[q] || ''),
+          submitted,
+          r.confirmation_code || ''
+        ];
+        rows.push(row);
+      });
+      
+      // Convert to CSV string
+      const csvContent = rows.map(row => 
+        row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(',')
+      ).join('\n');
+      
+      // Download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${currentFormTitle || 'form'}_responses_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+    }
+
+    // Show error
+    function showError(message) {
+      document.getElementById('forms-loading').style.display = 'none';
+      document.getElementById('forms-grid').innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <h3>⚠️ Error</h3>
+          <p>${message}</p>
+        </div>
+      `;
+    }
+
+    // Initialize
+    fetchForms();
+  </script>
+</body>
+</html>
+

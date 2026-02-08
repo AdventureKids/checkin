@@ -24,6 +24,10 @@ temp-*.html
 temp-*.txt
 *.tar.gz
 
+# CCB API debug files (contain sensitive data)
+ccb-*.xml
+ccb-api-explore.cjs
+
 # Electron build output
 release/
 

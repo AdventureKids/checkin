@@ -250,13 +250,13 @@
     
     <div class="divider"><span>or</span></div>
     
-    <button type="button" class="btn btn-secondary" id="offlineBtn">
+    <button type="button" class="btn btn-secondary" id="offlineBtn" style="display: none;">
       Continue Offline
     </button>
     
     <div class="offline-mode">
-      <h3>💡 Offline Mode</h3>
-      <p>Use existing local data without syncing. Check-ins will sync when you go online.</p>
+      <h3>☁️ Cloud-Connected</h3>
+      <p>ChurchCheck requires an internet connection. Your data is securely stored in the cloud.</p>
     </div>
     
     <div id="status" class="status"></div>
@@ -314,7 +314,7 @@
         
         const data = await response.json();
         
-        if (!response.ok || !data.success) {
+        if (!response.ok || !data.token) {
           throw new Error(data.error || 'Invalid credentials');
         }
         
@@ -371,4 +371,5 @@
   </script>
 </body>
 </html>
+
 

@@ -1,17 +1,27 @@
+/**
+ * ChurchCheck Electron App - Thin Client
+ * 
+ * This is a thin client that:
+ * - Connects to the cloud API for all data
+ * - Handles local Dymo label printing
+ * - Caches auth for offline login screen
+ * 
+ * No local database or server required!
+ */
+
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const https = require('https');
 
 // Keep references to prevent garbage collection
 let mainWindow = null;
 let loginWindow = null;
-let server = null;
 let authData = null;
 
 const isDev = process.env.NODE_ENV === 'development';
-const PORT = 3001;
-const API_URL = 'https://churchcheck-api.onrender.com';
+
+// Cloud API URL - your Render deployment
+const API_URL = process.env.API_URL || 'https://churchcheck-api.onrender.com';
 
 // ============================================
 // AUTH STORAGE
@@ -54,117 +64,6 @@ function clearAuth() {
   } catch (err) {
     console.error('Failed to clear auth:', err);
   }
-}
-
-// ============================================
-// DATABASE & ASSETS SETUP
-// ============================================
-
-function ensureDatabase() {
-  const userDataPath = app.getPath('userData');
-  const userDbPath = path.join(userDataPath, 'kidcheck.db');
-  
-  if (isDev) {
-    return path.join(__dirname, '..', 'kidcheck.db');
-  }
-  
-  if (!fs.existsSync(userDbPath)) {
-    const bundledDbPath = path.join(process.resourcesPath, 'server', 'kidcheck.db');
-    console.log('Copying database from:', bundledDbPath);
-    console.log('To:', userDbPath);
-    
-    if (fs.existsSync(bundledDbPath)) {
-      fs.copyFileSync(bundledDbPath, userDbPath);
-      console.log('Database copied successfully');
-    } else {
-      console.log('No bundled database found, will create new one');
-    }
-  } else {
-    console.log('Using existing database at:', userDbPath);
-  }
-  
-  return userDbPath;
-}
-
-function ensurePublicAssets() {
-  const userDataPath = app.getPath('userData');
-  const userPublicPath = path.join(userDataPath, 'public');
-  
-  if (isDev) {
-    return path.join(__dirname, '..', 'public');
-  }
-  
-  // Copy public assets if they don't exist
-  if (!fs.existsSync(userPublicPath)) {
-    const bundledPublicPath = path.join(process.resourcesPath, 'server', 'public');
-    console.log('Copying public assets from:', bundledPublicPath);
-    
-    if (fs.existsSync(bundledPublicPath)) {
-      fs.cpSync(bundledPublicPath, userPublicPath, { recursive: true });
-      console.log('Public assets copied successfully');
-    }
-  }
-  
-  return userPublicPath;
-}
-
-// ============================================
-// SERVER MANAGEMENT
-// ============================================
-
-function startServer() {
-  return new Promise((resolve, reject) => {
-    try {
-      // Set up environment before requiring the server
-      const dbPath = ensureDatabase();
-      const publicPath = ensurePublicAssets();
-      
-      const serverDir = isDev 
-        ? path.join(__dirname, '..')
-        : path.join(process.resourcesPath, 'server');
-      
-      const distPath = isDev
-        ? path.join(__dirname, '..', 'dist')
-        : path.join(process.resourcesPath, 'app.asar', 'dist');
-      
-      // Set environment variables BEFORE requiring print-server
-      process.env.PORT = PORT.toString();
-      process.env.NODE_ENV = 'production';
-      process.env.DB_PATH = dbPath;
-      process.env.PUBLIC_PATH = publicPath;
-      process.env.DIST_PATH = distPath;
-      process.env.DISABLE_PRINTING = 'false';
-      
-      console.log('Server configuration:');
-      console.log('  DB_PATH:', dbPath);
-      console.log('  PUBLIC_PATH:', publicPath);
-      console.log('  DIST_PATH:', distPath);
-      console.log('  Server dir:', serverDir);
-      
-      // Change to server directory for relative requires
-      process.chdir(serverDir);
-      
-      // Now require the print-server which will use the env vars
-      const serverPath = isDev 
-        ? path.join(__dirname, '..', 'print-server.cjs')
-        : path.join(process.resourcesPath, 'server', 'print-server.cjs');
-      
-      console.log('Loading server from:', serverPath);
-      
-      // The print-server.cjs starts listening when required
-      require(serverPath);
-      
-      // Give server time to start
-      setTimeout(() => {
-        console.log('Server should be running on port', PORT);
-        resolve();
-      }, 2000);
-      
-    } catch (err) {
-      console.error('Failed to start server:', err);
-      reject(err);
-    }
-  });
 }
 
 // ============================================
@@ -216,14 +115,16 @@ function createMainWindow() {
     backgroundColor: '#1a1a2e'
   });
 
-  // Add org_id to URL if authenticated
+  // Build URL with auth token for the cloud-hosted app
   const orgParam = authData?.orgId ? `?org_id=${authData.orgId}` : '';
   
   if (isDev) {
+    // In dev mode, load the local Vite dev server
     mainWindow.loadURL(`http://localhost:5173${orgParam}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadURL(`http://localhost:${PORT}${orgParam}`);
+    // In production, load from the cloud API
+    mainWindow.loadURL(`${API_URL}${orgParam}`);
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -291,23 +192,18 @@ function createMenu() {
           click: () => {
             if (mainWindow) {
               const orgParam = authData?.orgId ? `?org_id=${authData.orgId}` : '';
-              mainWindow.loadURL(`http://localhost:${PORT}/admin${orgParam}`);
+              if (isDev) {
+                mainWindow.loadURL(`http://localhost:5173/admin${orgParam}`);
+              } else {
+                mainWindow.loadURL(`${API_URL}/admin${orgParam}`);
+              }
             }
           }
         },
+        { type: 'separator' },
         {
-          label: 'Sync Data from Cloud',
-          click: async () => {
-            if (authData?.token) {
-              await syncFromCloud();
-            } else {
-              dialog.showMessageBox(mainWindow, {
-                type: 'info',
-                title: 'Not Logged In',
-                message: 'Please log in to sync data from the cloud.'
-              });
-            }
-          }
+          label: 'Printer Settings',
+          click: showPrinterSettings
         }
       ]
     }
@@ -348,42 +244,17 @@ function showAbout() {
     type: 'info',
     title: 'About ChurchCheck',
     message: 'ChurchCheck',
-    detail: `Version: ${app.getVersion()}${orgInfo}\n\nKids check-in that makes them want to come back.\n\n© ${new Date().getFullYear()} ChurchCheck`
+    detail: `Version: ${app.getVersion()}${orgInfo}\n\nKids check-in that makes them want to come back.\n\nConnected to: ${API_URL}\n\n© ${new Date().getFullYear()} ChurchCheck`
   });
 }
 
-// ============================================
-// CLOUD SYNC
-// ============================================
-
-async function syncFromCloud() {
-  if (!authData?.token) {
-    console.log('No auth token, cannot sync');
-    return false;
-  }
-  
-  try {
-    console.log('Syncing data from cloud...');
-    
-    // For now, we'll just verify the token is still valid
-    // Full sync would download families, children, etc. from the cloud
-    // and merge with local database
-    
-    const response = await fetch(`${API_URL}/api/auth/verify`, {
-      headers: { 'Authorization': `Bearer ${authData.token}` }
-    });
-    
-    if (!response.ok) {
-      console.log('Token expired, need to re-login');
-      return false;
-    }
-    
-    console.log('Sync complete');
-    return true;
-  } catch (err) {
-    console.error('Sync error:', err);
-    return false;
-  }
+function showPrinterSettings() {
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Printer Settings',
+    message: 'Dymo Label Printer',
+    detail: 'Make sure your Dymo LabelWriter is connected and the Dymo Web Service is running.\n\nThe app will automatically detect available Dymo printers.'
+  });
 }
 
 // ============================================
@@ -405,16 +276,14 @@ ipcMain.handle('login', async (event, data) => {
 });
 
 ipcMain.handle('continue-offline', async () => {
-  console.log('Continuing offline');
-  authData = null;
-  
-  // Close login window and open main window without auth
-  if (loginWindow) {
-    loginWindow.close();
-  }
-  
-  createMainWindow();
-  return { success: true };
+  console.log('Continuing offline - not supported in cloud mode');
+  dialog.showMessageBox(loginWindow, {
+    type: 'warning',
+    title: 'Internet Required',
+    message: 'ChurchCheck requires an internet connection to access your data.',
+    detail: 'Please check your internet connection and try again.'
+  });
+  return { success: false };
 });
 
 ipcMain.handle('get-auth', async () => {
@@ -426,56 +295,84 @@ ipcMain.handle('logout', async () => {
   return { success: true };
 });
 
-ipcMain.handle('sync-from-cloud', async () => {
-  return await syncFromCloud();
-});
-
 ipcMain.handle('get-app-info', async () => {
   return {
     version: app.getVersion(),
     platform: process.platform,
     orgName: authData?.orgName,
-    isOffline: !authData?.token
+    apiUrl: API_URL
   };
 });
+
+ipcMain.handle('get-api-url', async () => {
+  return API_URL;
+});
+
+// ============================================
+// PRINTING (Local Dymo via Web Service)
+// ============================================
+
+// The actual printing is handled by the React app via the Dymo Web Service
+// These handlers are for future local print queue management
+
+ipcMain.handle('print-label', async (event, labelData) => {
+  console.log('Print request received:', labelData);
+  // Printing is handled by the React app via Dymo Web Service
+  // This is a placeholder for future local print queue
+  return { success: true };
+});
+
+ipcMain.handle('get-printers', async () => {
+  // Dymo printers are detected by the web service
+  // This returns a placeholder - actual detection is in the React app
+  return [];
+});
+
+// ============================================
+// TOKEN VERIFICATION
+// ============================================
+
+async function verifyToken(token) {
+  try {
+    const response = await fetch(`${API_URL}/api/auth/verify`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return response.ok;
+  } catch (err) {
+    console.error('Token verification failed:', err);
+    return false;
+  }
+}
 
 // ============================================
 // APP LIFECYCLE
 // ============================================
 
 app.whenReady().then(async () => {
-  console.log('App ready, starting server...');
+  console.log('ChurchCheck Electron App Starting...');
+  console.log('API URL:', API_URL);
   console.log('isDev:', isDev);
-  console.log('resourcesPath:', process.resourcesPath);
   
-  try {
-    await startServer();
-    console.log('Server started');
+  // Check for saved auth
+  authData = loadSavedAuth();
+  
+  if (authData?.token) {
+    console.log('Found saved auth for:', authData.orgName);
     
-    // Check for saved auth
-    authData = loadSavedAuth();
+    // Verify token is still valid
+    const isValid = await verifyToken(authData.token);
     
-    if (authData?.token) {
-      console.log('Found saved auth for:', authData.orgName);
-      // Verify token is still valid
-      const isValid = await syncFromCloud();
-      if (isValid) {
-        console.log('Token valid, opening main window');
-        createMainWindow();
-      } else {
-        console.log('Token expired, showing login');
-        clearAuth();
-        createLoginWindow();
-      }
+    if (isValid) {
+      console.log('Token valid, opening main window');
+      createMainWindow();
     } else {
-      console.log('No saved auth, showing login');
+      console.log('Token expired, showing login');
+      clearAuth();
       createLoginWindow();
     }
-    
-  } catch (err) {
-    console.error('Failed to start:', err);
-    dialog.showErrorBox('Startup Error', `Failed to start the application: ${err.message}`);
-    app.quit();
+  } else {
+    console.log('No saved auth, showing login');
+    createLoginWindow();
   }
 });
 
