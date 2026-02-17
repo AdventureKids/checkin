@@ -144,11 +144,19 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
 
-    // Find user
-    const user = await queryOne(
+    // Find user - try with org_id first, then fallback to any matching username
+    let user = await queryOne(
       'SELECT * FROM admin_users WHERE org_id = $1 AND username = $2',
       [org.id, username]
     );
+    
+    // Fallback: find user by username only (for initial setup/migration)
+    if (!user) {
+      user = await queryOne(
+        'SELECT * FROM admin_users WHERE username = $1',
+        [username]
+      );
+    }
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
