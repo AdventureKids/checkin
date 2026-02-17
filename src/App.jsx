@@ -1634,7 +1634,15 @@ export default function App() {
     
     try {
       const cleanPhone = phone.replace(/\D/g, '');
-      const response = await fetch(`${API_BASE}/api/family/${cleanPhone}`);
+      
+      // Add timeout for slow cloud connections
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      const response = await fetch(`${API_BASE}/api/family/${cleanPhone}`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
       
       if (response.ok) {
         const familyData = await response.json();
@@ -1645,6 +1653,9 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error looking up family:', err);
+      if (err.name === 'AbortError') {
+        alert('Connection timed out. Please try again.');
+      }
       setScreen('notfound');
     } finally {
       setLoading(false);
