@@ -334,9 +334,14 @@ ipcMain.handle('get-printers', async () => {
 
 async function verifyToken(token) {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
     const response = await fetch(`${API_URL}/api/auth/verify`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: controller.signal
     });
+    clearTimeout(timeout);
     return response.ok;
   } catch (err) {
     console.error('Token verification failed:', err);
