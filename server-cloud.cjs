@@ -616,7 +616,7 @@ app.get('/api/health', async (req, res) => {
 // FALLBACK TO SPA
 // ============================================
 
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(distPath, 'index.html'));
   }
