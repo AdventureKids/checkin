@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { isDymoServiceRunning, getDymoPrinters, printCheckInLabels } from './dymoPrint';
+import { isDymoServiceRunning, getDymoPrinters, printCheckInLabels, isPrintHelperRunning, printViaHelper } from './dymoPrint';
 
 // Use relative URL in production (same origin), localhost in development
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
@@ -1174,54 +1174,82 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
         
         setEarnedRewards(allEarnedRewards);
 
-        // Try Dymo browser printing first, fall back to server printing
-        let printedViaDymo = false;
-        
-        try {
-          console.log('🔍 Checking for Dymo Connect service...');
-          const dymoStatus = await isDymoServiceRunning();
-          console.log('📡 Dymo status:', dymoStatus);
-          
-          if (dymoStatus.running) {
-            // Get available Dymo printers
-            console.log('🖨️ Getting available printers...');
-            const printers = await getDymoPrinters();
-            console.log('🖨️ Found printers:', printers);
+        // Print via local print helper (generates graphical PNG labels, prints via lp/PowerShell)
+        {
+          try {
+            const helperStatus = await isPrintHelperRunning();
+            console.log('🖨️ Print helper status:', helperStatus);
             
-            if (printers.length > 0) {
-              const printerName = printers[0].name; // Use first available printer
-              console.log(`🖨️ Printing via Dymo to: ${printerName}`);
+            if (helperStatus.running) {
+              // Print via local print helper
+              const kidsToPrint = pickupCodes.filter(c => !c.isVolunteer);
+              const volunteersToPrint = pickupCodes.filter(c => c.isVolunteer);
               
-              // Print labels for each child via Dymo
-              for (const child of pickupCodes) {
-                console.log(`📄 Printing label for: ${child.name}`);
-                await printCheckInLabels(printerName, {
-                  childName: child.name,
+              // Print child labels (one per child)
+              for (const child of kidsToPrint) {
+                console.log(`📄 Printing child label for: ${child.name}`);
+                await printViaHelper({
+                  type: 'child',
+                  childName: child.name || child.firstName,
                   pickupCode: child.pickupCode,
                   room: child.room || 'Room 101',
-                  parentName: family.parent_name || family.parentName,
-                  parentPhone: family.phone,
-                  allergies: child.allergies,
-                  date: new Date().toLocaleDateString(),
-                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  parentName: family.parent_name || family.parentName || family.name,
+                  parentPhone: family.phone || '',
+                  gender: child.gender || '',
+                  streak: child.streak || 0,
+                  badges: child.badges || 0,
+                  rank: child.rank || 1,
+                  allergies: child.allergies || '',
+                  tier: child.tier || null,
+                  isNewBadge: child.isNewBadge || false,
+                  badgeName: child.badgeName || null
                 });
               }
               
-              printedViaDymo = true;
-              console.log('✅ Dymo printing complete');
+              // Print volunteer badges
+              for (const volunteer of volunteersToPrint) {
+                await printViaHelper({
+                  type: 'volunteer',
+                  childName: volunteer.name || volunteer.firstName,
+                  room: volunteer.room || 'Children\'s Ministry',
+                  serviceArea: volunteer.volunteerDetails?.serviceArea || ''
+                });
+              }
+              
+              // Print ONE parent receipt for all kids
+              if (kidsToPrint.length > 0) {
+                await printViaHelper({
+                  type: 'parent',
+                  familyName: family.parent_name || family.parentName || family.name,
+                  children: kidsToPrint.map(c => ({
+                    name: c.name || c.firstName,
+                    pickupCode: c.pickupCode,
+                    room: c.room || 'Room 101'
+                  }))
+                });
+              }
+              
+              // Print reward certificates
+              for (const reward of allEarnedRewards) {
+                await printViaHelper({
+                  type: 'reward',
+                  childName: reward.childName,
+                  rewardName: reward.name,
+                  rewardIcon: reward.icon || '🏆'
+                });
+              }
+              
+              console.log('✅ Print helper printing complete');
             } else {
-              console.log('⚠️ No Dymo printers found');
+              console.log('⚠️ No print service available (Dymo Connect or Print Helper)');
             }
-          } else {
-            console.log('⚠️ Dymo Connect service not running');
+          } catch (printErr) {
+            console.log('❌ Print helper error:', printErr.message);
           }
-        } catch (dymoErr) {
-          console.log('❌ Dymo printing error:', dymoErr.message);
-          console.log('Falling back to server printing...');
         }
-        
-        // Fall back to server-side printing if Dymo not available
-        if (!printedViaDymo) {
+
+        // Legacy server-side printing fallback (for old setups)
+        if (false) {
           // Get label settings from active template
           const labelSettings = activeTemplate?.label_settings || {};
           const kidLabelSettings = labelSettings.kidLabel || {};
@@ -1634,15 +1662,7 @@ export default function App() {
     
     try {
       const cleanPhone = phone.replace(/\D/g, '');
-      
-      // Add timeout for slow cloud connections
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-      
-      const response = await fetch(`${API_BASE}/api/family/${cleanPhone}`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+      const response = await fetch(`${API_BASE}/api/family/${cleanPhone}`);
       
       if (response.ok) {
         const familyData = await response.json();
@@ -1653,9 +1673,6 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error looking up family:', err);
-      if (err.name === 'AbortError') {
-        alert('Connection timed out. Please try again.');
-      }
       setScreen('notfound');
     } finally {
       setLoading(false);

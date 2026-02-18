@@ -426,6 +426,32 @@ export async function printCheckInLabels(printerName, childData) {
   return { success: true, printed: 2 };
 }
 
+// ============================================
+// LOCAL PRINT HELPER (fallback - bypasses DYMO Connect)
+// ============================================
+const PRINT_HELPER_URL = 'http://localhost:3100';
+
+export async function isPrintHelperRunning() {
+  try {
+    const response = await fetch(`${PRINT_HELPER_URL}/status`, { mode: 'cors' });
+    if (response.ok) {
+      const data = await response.json();
+      return { running: true, printer: data.printer };
+    }
+  } catch (e) {}
+  return { running: false };
+}
+
+export async function printViaHelper(labelData) {
+  const response = await fetch(`${PRINT_HELPER_URL}/print`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(labelData),
+    mode: 'cors',
+  });
+  return response.json();
+}
+
 export default {
   isDymoServiceRunning,
   getDymoPrinters,
@@ -434,7 +460,9 @@ export default {
   printParentLabel,
   printCheckInLabels,
   generateChildLabelXml,
-  generateParentLabelXml
+  generateParentLabelXml,
+  isPrintHelperRunning,
+  printViaHelper
 };
 
 
