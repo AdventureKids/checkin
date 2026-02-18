@@ -33,6 +33,14 @@ const LABEL_H = 166;
 // Windows bitmap size (300 DPI): 1200 x 693 pixels
 const BMP_W = 1200;
 const BMP_H = 693;
+// DYMO safe margins (printer clips ~0.5" on right/bottom, ~0.25" on left/top)
+// All content must stay inside these bounds
+const MARGIN_L = 30;   // left margin px
+const MARGIN_T = 20;   // top margin px
+const MARGIN_R = 160;  // right margin px (DYMO clips most here)
+const MARGIN_B = 100;  // bottom margin px
+const SAFE_W = BMP_W - MARGIN_L - MARGIN_R;  // ~1010px usable width
+const SAFE_H = BMP_H - MARGIN_T - MARGIN_B;  // ~573px usable height
 
 // Avatar paths
 const PUBLIC_PATH = path.join(__dirname, 'public');
@@ -244,20 +252,20 @@ function generateWindowsPrintScript(data, type) {
 
     const now = new Date();
     const dateStr = `${now.toLocaleDateString()} ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
-    const avatarSize = 320;
-    const avatarX = 45;
-    const avatarY = Math.round((BMP_H - avatarSize) / 2);
-    const contentX = showAvatar ? avatarX + avatarSize + 35 : 45;
+    const avatarSize = 280;
+    const avatarX = MARGIN_L + 15;
+    const avatarY = MARGIN_T + Math.round((SAFE_H - avatarSize) / 2);
+    const contentX = showAvatar ? avatarX + avatarSize + 25 : MARGIN_L + 15;
 
-    // Border
+    // Border (inside safe margins)
     if (borderStyle !== 'none') {
       if (tier === 'gold') {
-        drawCommands += `$pen = New-Object Drawing.Pen([Drawing.Color]::Black, 12)\n$g.DrawRectangle($pen, 6, 6, ${BMP_W-12}, ${BMP_H-12})\n`;
-        drawCommands += `$pen2 = New-Object Drawing.Pen([Drawing.Color]::Black, 3)\n$g.DrawRectangle($pen2, 18, 18, ${BMP_W-36}, ${BMP_H-36})\n`;
+        drawCommands += `$pen = New-Object Drawing.Pen([Drawing.Color]::Black, 10)\n$g.DrawRectangle($pen, ${MARGIN_L}, ${MARGIN_T}, ${SAFE_W}, ${SAFE_H})\n`;
+        drawCommands += `$pen2 = New-Object Drawing.Pen([Drawing.Color]::Black, 3)\n$g.DrawRectangle($pen2, ${MARGIN_L+10}, ${MARGIN_T+10}, ${SAFE_W-20}, ${SAFE_H-20})\n`;
       } else if (tier === 'silver') {
-        drawCommands += `$pen = New-Object Drawing.Pen([Drawing.Color]::Black, 12)\n$pen.DashStyle = [Drawing.Drawing2D.DashStyle]::Dash\n$g.DrawRectangle($pen, 6, 6, ${BMP_W-12}, ${BMP_H-12})\n`;
+        drawCommands += `$pen = New-Object Drawing.Pen([Drawing.Color]::Black, 10)\n$pen.DashStyle = [Drawing.Drawing2D.DashStyle]::Dash\n$g.DrawRectangle($pen, ${MARGIN_L}, ${MARGIN_T}, ${SAFE_W}, ${SAFE_H})\n`;
       } else {
-        drawCommands += `$pen = New-Object Drawing.Pen([Drawing.Color]::Black, 12)\n$g.DrawRectangle($pen, 6, 6, ${BMP_W-12}, ${BMP_H-12})\n`;
+        drawCommands += `$pen = New-Object Drawing.Pen([Drawing.Color]::Black, 10)\n$g.DrawRectangle($pen, ${MARGIN_L}, ${MARGIN_T}, ${SAFE_W}, ${SAFE_H})\n`;
       }
     }
 
@@ -288,185 +296,191 @@ try {
 
     // Tier badge
     if (tier) {
-      drawCommands += `$tierFont = New-Object Drawing.Font('Arial', 32, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('* ${psEsc(tier.toUpperCase())} TIER *', $tierFont, [Drawing.Brushes]::Black, ${contentX}, 20)\n`;
+      drawCommands += `$tierFont = New-Object Drawing.Font('Arial', 28, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('* ${psEsc(tier.toUpperCase())} TIER *', $tierFont, [Drawing.Brushes]::Black, ${contentX}, ${MARGIN_T + 10})\n`;
     }
 
     // Child name
     if (showName) {
-      const nameY = tier ? 75 : 45;
-      // Auto-size name
+      const nameY = MARGIN_T + (tier ? 50 : 25);
+      // Auto-size name to fit within safe area
+      const maxNameWidth = SAFE_W - (contentX - MARGIN_L) - 200; // leave room for pickup code
       drawCommands += `
-$nameSize = 110
+$nameSize = 90
 do {
   $nameFont = New-Object Drawing.Font('Arial', $nameSize, [Drawing.FontStyle]::Bold)
   $nameWidth = $g.MeasureString('${psEsc(childName)}', $nameFont).Width
-  if ($nameWidth -gt 580) { $nameSize -= 10 } else { break }
-} while ($nameSize -gt 40)
+  if ($nameWidth -gt ${maxNameWidth}) { $nameSize -= 10 } else { break }
+} while ($nameSize -gt 36)
 $g.DrawString('${psEsc(childName)}', $nameFont, [Drawing.Brushes]::Black, ${contentX}, ${nameY})
 `;
     }
 
     // Room
     if (showRoom) {
-      const roomY = tier ? 195 : 165;
-      drawCommands += `$roomFont = New-Object Drawing.Font('Arial', 44, [Drawing.FontStyle]::Bold)\n`;
+      const roomY = MARGIN_T + (tier ? 155 : 130);
+      drawCommands += `$roomFont = New-Object Drawing.Font('Arial', 38, [Drawing.FontStyle]::Bold)\n`;
       drawCommands += `$g.DrawString('${psEsc(room)}', $roomFont, [Drawing.Brushes]::Black, ${contentX}, ${roomY})\n`;
     }
 
     // Stats
-    const statsY = tier ? 290 : 260;
+    const statsY = MARGIN_T + (tier ? 230 : 210);
     let statIndex = 0;
     if (showStreak && streak > 0) {
-      drawCommands += `$statFont = New-Object Drawing.Font('Arial', 64, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('${streak}', $statFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 150}, ${statsY})\n`;
-      drawCommands += `$labelFont = New-Object Drawing.Font('Arial', 22, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('STREAK', $labelFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 150}, ${statsY + 70})\n`;
+      drawCommands += `$statFont = New-Object Drawing.Font('Arial', 52, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('${streak}', $statFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 130}, ${statsY})\n`;
+      drawCommands += `$labelFont = New-Object Drawing.Font('Arial', 18, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('STREAK', $labelFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 130}, ${statsY + 58})\n`;
       statIndex++;
     }
     if (showBadges) {
-      drawCommands += `$statFont = New-Object Drawing.Font('Arial', 64, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('${badges || 0}', $statFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 150}, ${statsY})\n`;
-      drawCommands += `$labelFont = New-Object Drawing.Font('Arial', 22, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('BADGES', $labelFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 150}, ${statsY + 70})\n`;
+      drawCommands += `$statFont = New-Object Drawing.Font('Arial', 52, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('${badges || 0}', $statFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 130}, ${statsY})\n`;
+      drawCommands += `$labelFont = New-Object Drawing.Font('Arial', 18, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('BADGES', $labelFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 130}, ${statsY + 58})\n`;
       statIndex++;
     }
     if (showRank) {
-      drawCommands += `$statFont = New-Object Drawing.Font('Arial', 64, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('#${rank || 1}', $statFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 150}, ${statsY})\n`;
-      drawCommands += `$labelFont = New-Object Drawing.Font('Arial', 22, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('RANK', $labelFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 150}, ${statsY + 70})\n`;
+      drawCommands += `$statFont = New-Object Drawing.Font('Arial', 52, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('#${rank || 1}', $statFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 130}, ${statsY})\n`;
+      drawCommands += `$labelFont = New-Object Drawing.Font('Arial', 18, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('RANK', $labelFont, [Drawing.Brushes]::Black, ${contentX + statIndex * 130}, ${statsY + 58})\n`;
     }
 
     // New badge
     if (isNewBadge && badgeName) {
-      const badgeY = statsY + 110;
-      drawCommands += `$g.FillRectangle([Drawing.Brushes]::Black, ${contentX}, ${badgeY}, 440, 52)\n`;
-      drawCommands += `$badgeFont = New-Object Drawing.Font('Arial', 26, [Drawing.FontStyle]::Bold)\n`;
+      const badgeY = statsY + 90;
+      drawCommands += `$g.FillRectangle([Drawing.Brushes]::Black, ${contentX}, ${badgeY}, 380, 44)\n`;
+      drawCommands += `$badgeFont = New-Object Drawing.Font('Arial', 22, [Drawing.FontStyle]::Bold)\n`;
       drawCommands += `$bsf = New-Object Drawing.StringFormat\n$bsf.Alignment = [Drawing.StringAlignment]::Center\n$bsf.LineAlignment = [Drawing.StringAlignment]::Center\n`;
-      drawCommands += `$g.DrawString('* NEW: ${psEsc(badgeName)} *', $badgeFont, [Drawing.Brushes]::White, (New-Object Drawing.RectangleF(${contentX}, ${badgeY}, 440, 52)), $bsf)\n`;
+      drawCommands += `$g.DrawString('* NEW: ${psEsc(badgeName)} *', $badgeFont, [Drawing.Brushes]::White, (New-Object Drawing.RectangleF(${contentX}, ${badgeY}, 380, 44)), $bsf)\n`;
     }
 
-    // Pickup code
+    // Pickup code (positioned within safe area)
     if (showPickupCode) {
-      const sepX = 1040;
+      const sepX = MARGIN_L + SAFE_W - 180;  // separator line
       drawCommands += `$dashPen = New-Object Drawing.Pen([Drawing.Color]::Black, 2)\n$dashPen.DashStyle = [Drawing.Drawing2D.DashStyle]::Dash\n`;
-      drawCommands += `$g.DrawLine($dashPen, ${sepX}, 25, ${sepX}, ${BMP_H - 25})\n`;
-      const codeX = sepX + (BMP_W - sepX) / 2;
+      drawCommands += `$g.DrawLine($dashPen, ${sepX}, ${MARGIN_T + 10}, ${sepX}, ${MARGIN_T + SAFE_H - 10})\n`;
+      const codeX = sepX + 90;  // center of pickup code area
       drawCommands += `$csf = New-Object Drawing.StringFormat\n$csf.Alignment = [Drawing.StringAlignment]::Center\n`;
-      drawCommands += `$pickupLbl = New-Object Drawing.Font('Arial', 22, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('PICKUP', $pickupLbl, [Drawing.Brushes]::Black, ${codeX}, 90, $csf)\n`;
-      drawCommands += `$g.DrawString('CODE', $pickupLbl, [Drawing.Brushes]::Black, ${codeX}, 118, $csf)\n`;
-      drawCommands += `$codeFont = New-Object Drawing.Font('Consolas', 52, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('${psEsc(pickupCode)}', $codeFont, [Drawing.Brushes]::Black, ${codeX}, 200, $csf)\n`;
+      drawCommands += `$pickupLbl = New-Object Drawing.Font('Arial', 18, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('PICKUP', $pickupLbl, [Drawing.Brushes]::Black, ${codeX}, ${MARGIN_T + 60}, $csf)\n`;
+      drawCommands += `$g.DrawString('CODE', $pickupLbl, [Drawing.Brushes]::Black, ${codeX}, ${MARGIN_T + 82}, $csf)\n`;
+      drawCommands += `$codeFont = New-Object Drawing.Font('Consolas', 42, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('${psEsc(pickupCode)}', $codeFont, [Drawing.Brushes]::Black, ${codeX}, ${MARGIN_T + 150}, $csf)\n`;
     }
 
     // Allergies
     if (showAllergies && allergies) {
-      drawCommands += `$allergyFont = New-Object Drawing.Font('Arial', 24, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$allergyFont = New-Object Drawing.Font('Arial', 20, [Drawing.FontStyle]::Bold)\n`;
       drawCommands += `$allergyBrush = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(220, 38, 38))\n`;
-      drawCommands += `$g.DrawString('WARNING: ${psEsc(allergies)}', $allergyFont, $allergyBrush, ${contentX}, ${BMP_H - 80})\n`;
+      drawCommands += `$g.DrawString('WARNING: ${psEsc(allergies)}', $allergyFont, $allergyBrush, ${contentX}, ${MARGIN_T + SAFE_H - 55})\n`;
     }
 
     // Date footer
     if (showDate) {
-      drawCommands += `$dateFont = New-Object Drawing.Font('Arial', 20, [Drawing.FontStyle]::Regular)\n`;
+      drawCommands += `$dateFont = New-Object Drawing.Font('Arial', 16, [Drawing.FontStyle]::Regular)\n`;
       drawCommands += `$dateBrush = New-Object Drawing.SolidBrush([Drawing.Color]::Gray)\n`;
       drawCommands += `$dsf = New-Object Drawing.StringFormat\n$dsf.Alignment = [Drawing.StringAlignment]::Center\n`;
-      drawCommands += `$g.DrawString('${psEsc(dateStr)} - ${psEsc(parentName)}', $dateFont, $dateBrush, ${showPickupCode ? 540 : BMP_W / 2}, ${BMP_H - 35}, $dsf)\n`;
+      const footerCenterX = showPickupCode ? MARGIN_L + (SAFE_W - 180) / 2 : MARGIN_L + SAFE_W / 2;
+      drawCommands += `$g.DrawString('${psEsc(dateStr)} - ${psEsc(parentName)}', $dateFont, $dateBrush, ${footerCenterX}, ${MARGIN_T + SAFE_H - 25}, $dsf)\n`;
     }
 
   } else if (type === 'parent') {
     const { familyName = 'Family', children = [], showFamilyName = true, showChildren = true, showPickupCodes = true, showRooms = true, showDate = true, showTime = true } = data;
     const now = new Date();
 
-    drawCommands += `$borderPen = New-Object Drawing.Pen([Drawing.Color]::Black, 8)\n$g.DrawRectangle($borderPen, 4, 4, ${BMP_W-8}, ${BMP_H-8})\n`;
-    drawCommands += `$titleFont = New-Object Drawing.Font('Arial', 48, [Drawing.FontStyle]::Bold)\n`;
+    drawCommands += `$borderPen = New-Object Drawing.Pen([Drawing.Color]::Black, 6)\n$g.DrawRectangle($borderPen, ${MARGIN_L}, ${MARGIN_T}, ${SAFE_W}, ${SAFE_H})\n`;
+    drawCommands += `$titleFont = New-Object Drawing.Font('Arial', 40, [Drawing.FontStyle]::Bold)\n`;
     drawCommands += `$csf = New-Object Drawing.StringFormat\n$csf.Alignment = [Drawing.StringAlignment]::Center\n`;
-    drawCommands += `$g.DrawString('PARENT PICKUP RECEIPT', $titleFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 15, $csf)\n`;
-    drawCommands += `$g.DrawLine((New-Object Drawing.Pen([Drawing.Color]::Black, 2)), 50, 80, ${BMP_W-50}, 80)\n`;
+    const parentCenterX = MARGIN_L + SAFE_W / 2;
+    drawCommands += `$g.DrawString('PARENT PICKUP RECEIPT', $titleFont, [Drawing.Brushes]::Black, ${parentCenterX}, ${MARGIN_T + 10}, $csf)\n`;
+    drawCommands += `$g.DrawLine((New-Object Drawing.Pen([Drawing.Color]::Black, 2)), ${MARGIN_L + 30}, ${MARGIN_T + 60}, ${MARGIN_L + SAFE_W - 30}, ${MARGIN_T + 60})\n`;
 
-    let yPos = 110;
+    let yPos = MARGIN_T + 80;
     if (showFamilyName) {
-      drawCommands += `$famFont = New-Object Drawing.Font('Arial', 46, [Drawing.FontStyle]::Bold)\n`;
-      drawCommands += `$g.DrawString('${psEsc(familyName)}', $famFont, [Drawing.Brushes]::Black, ${BMP_W/2}, ${yPos}, $csf)\n`;
-      yPos += 60;
+      drawCommands += `$famFont = New-Object Drawing.Font('Arial', 38, [Drawing.FontStyle]::Bold)\n`;
+      drawCommands += `$g.DrawString('${psEsc(familyName)}', $famFont, [Drawing.Brushes]::Black, ${parentCenterX}, ${yPos}, $csf)\n`;
+      yPos += 50;
     }
 
     if (showChildren && children.length > 0) {
+      const colWidth = Math.min(320, Math.floor(SAFE_W / Math.min(children.length, 3)));
       children.forEach((child, i) => {
         const col = i % 3, row = Math.floor(i / 3);
-        const xPos = 60 + (col * 380);
-        const rowY = yPos + (row * 180);
-        drawCommands += `$childFont = New-Object Drawing.Font('Arial', 36, [Drawing.FontStyle]::Bold)\n`;
+        const xPos = MARGIN_L + 20 + (col * colWidth);
+        const rowY = yPos + (row * 160);
+        drawCommands += `$childFont = New-Object Drawing.Font('Arial', 30, [Drawing.FontStyle]::Bold)\n`;
         drawCommands += `$g.DrawString('${psEsc(child.name || child.childName)}', $childFont, [Drawing.Brushes]::Black, ${xPos}, ${rowY})\n`;
         if (showRooms) {
-          drawCommands += `$roomFont2 = New-Object Drawing.Font('Arial', 22)\n`;
-          drawCommands += `$g.DrawString('${psEsc(child.room || 'Room 101')}', $roomFont2, [Drawing.Brushes]::Black, ${xPos}, ${rowY + 40})\n`;
+          drawCommands += `$roomFont2 = New-Object Drawing.Font('Arial', 18)\n`;
+          drawCommands += `$g.DrawString('${psEsc(child.room || 'Room 101')}', $roomFont2, [Drawing.Brushes]::Black, ${xPos}, ${rowY + 35})\n`;
         }
         if (showPickupCodes) {
-          drawCommands += `$codeLbl = New-Object Drawing.Font('Arial', 22)\n`;
-          drawCommands += `$g.DrawString('CODE:', $codeLbl, [Drawing.Brushes]::Black, ${xPos}, ${rowY + 75})\n`;
-          drawCommands += `$codeFont2 = New-Object Drawing.Font('Consolas', 56, [Drawing.FontStyle]::Bold)\n`;
-          drawCommands += `$g.DrawString('${psEsc(child.pickupCode)}', $codeFont2, [Drawing.Brushes]::Black, ${xPos}, ${rowY + 100})\n`;
+          drawCommands += `$codeLbl = New-Object Drawing.Font('Arial', 18)\n`;
+          drawCommands += `$g.DrawString('CODE:', $codeLbl, [Drawing.Brushes]::Black, ${xPos}, ${rowY + 62})\n`;
+          drawCommands += `$codeFont2 = New-Object Drawing.Font('Consolas', 44, [Drawing.FontStyle]::Bold)\n`;
+          drawCommands += `$g.DrawString('${psEsc(child.pickupCode)}', $codeFont2, [Drawing.Brushes]::Black, ${xPos}, ${rowY + 85})\n`;
         }
       });
     }
 
     let footer = 'Present this receipt at pickup';
     if (showDate && showTime) footer += ` - ${now.toLocaleDateString()} ${now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
-    drawCommands += `$footFont = New-Object Drawing.Font('Arial', 22)\n`;
-    drawCommands += `$g.DrawString('${psEsc(footer)}', $footFont, [Drawing.Brushes]::Black, ${BMP_W/2}, ${BMP_H-40}, $csf)\n`;
+    drawCommands += `$footFont = New-Object Drawing.Font('Arial', 18)\n`;
+    drawCommands += `$g.DrawString('${psEsc(footer)}', $footFont, [Drawing.Brushes]::Black, ${parentCenterX}, ${MARGIN_T + SAFE_H - 30}, $csf)\n`;
 
   } else if (type === 'volunteer') {
     const { childName = 'Volunteer', volunteerName, room = "Children's Ministry", serviceArea = '' } = data;
     const name = volunteerName || childName;
     const now = new Date();
 
-    drawCommands += `$borderPen = New-Object Drawing.Pen([Drawing.Color]::Black, 12)\n$g.DrawRectangle($borderPen, 6, 6, ${BMP_W-12}, ${BMP_H-12})\n`;
+    const volCenterX = MARGIN_L + SAFE_W / 2;
+    drawCommands += `$borderPen = New-Object Drawing.Pen([Drawing.Color]::Black, 10)\n$g.DrawRectangle($borderPen, ${MARGIN_L}, ${MARGIN_T}, ${SAFE_W}, ${SAFE_H})\n`;
     drawCommands += `$csf = New-Object Drawing.StringFormat\n$csf.Alignment = [Drawing.StringAlignment]::Center\n`;
-    drawCommands += `$hdrFont = New-Object Drawing.Font('Arial', 48, [Drawing.FontStyle]::Bold)\n`;
-    drawCommands += `$g.DrawString('VOLUNTEER', $hdrFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 20, $csf)\n`;
-    drawCommands += `$g.DrawLine((New-Object Drawing.Pen([Drawing.Color]::Black, 3)), 50, 80, ${BMP_W-50}, 80)\n`;
+    drawCommands += `$hdrFont = New-Object Drawing.Font('Arial', 40, [Drawing.FontStyle]::Bold)\n`;
+    drawCommands += `$g.DrawString('VOLUNTEER', $hdrFont, [Drawing.Brushes]::Black, ${volCenterX}, ${MARGIN_T + 10}, $csf)\n`;
+    drawCommands += `$g.DrawLine((New-Object Drawing.Pen([Drawing.Color]::Black, 3)), ${MARGIN_L + 30}, ${MARGIN_T + 60}, ${MARGIN_L + SAFE_W - 30}, ${MARGIN_T + 60})\n`;
     drawCommands += `
-$volNameSize = 100
+$volNameSize = 80
 do {
   $volFont = New-Object Drawing.Font('Arial', $volNameSize, [Drawing.FontStyle]::Bold)
   $volWidth = $g.MeasureString('${psEsc(name)}', $volFont).Width
-  if ($volWidth -gt ${BMP_W - 100}) { $volNameSize -= 10 } else { break }
-} while ($volNameSize -gt 40)
-$g.DrawString('${psEsc(name)}', $volFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 200, $csf)
+  if ($volWidth -gt ${SAFE_W - 60}) { $volNameSize -= 10 } else { break }
+} while ($volNameSize -gt 36)
+$g.DrawString('${psEsc(name)}', $volFont, [Drawing.Brushes]::Black, ${volCenterX}, ${MARGIN_T + 150}, $csf)
 `;
-    drawCommands += `$areaFont = New-Object Drawing.Font('Arial', 40, [Drawing.FontStyle]::Bold)\n`;
-    drawCommands += `$g.DrawString('${psEsc(serviceArea || room)}', $areaFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 360, $csf)\n`;
-    drawCommands += `$dateFont = New-Object Drawing.Font('Arial', 28)\n`;
+    drawCommands += `$areaFont = New-Object Drawing.Font('Arial', 34, [Drawing.FontStyle]::Bold)\n`;
+    drawCommands += `$g.DrawString('${psEsc(serviceArea || room)}', $areaFont, [Drawing.Brushes]::Black, ${volCenterX}, ${MARGIN_T + 290}, $csf)\n`;
+    drawCommands += `$dateFont = New-Object Drawing.Font('Arial', 22)\n`;
     drawCommands += `$dateBrush = New-Object Drawing.SolidBrush([Drawing.Color]::Gray)\n`;
-    drawCommands += `$g.DrawString('${psEsc(now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}))}', $dateFont, $dateBrush, ${BMP_W/2}, ${BMP_H-60}, $csf)\n`;
+    drawCommands += `$g.DrawString('${psEsc(now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}))}', $dateFont, $dateBrush, ${volCenterX}, ${MARGIN_T + SAFE_H - 35}, $csf)\n`;
 
   } else if (type === 'reward') {
     const { childName = 'Child', rewardName = 'Achievement' } = data;
 
-    drawCommands += `$borderPen = New-Object Drawing.Pen([Drawing.Color]::Black, 8)\n$g.DrawRectangle($borderPen, 4, 4, ${BMP_W-8}, ${BMP_H-8})\n`;
-    drawCommands += `$borderPen2 = New-Object Drawing.Pen([Drawing.Color]::Black, 3)\n$g.DrawRectangle($borderPen2, 14, 14, ${BMP_W-28}, ${BMP_H-28})\n`;
+    const rwdCenterX = MARGIN_L + SAFE_W / 2;
+    drawCommands += `$borderPen = New-Object Drawing.Pen([Drawing.Color]::Black, 6)\n$g.DrawRectangle($borderPen, ${MARGIN_L}, ${MARGIN_T}, ${SAFE_W}, ${SAFE_H})\n`;
+    drawCommands += `$borderPen2 = New-Object Drawing.Pen([Drawing.Color]::Black, 2)\n$g.DrawRectangle($borderPen2, ${MARGIN_L+10}, ${MARGIN_T+10}, ${SAFE_W-20}, ${SAFE_H-20})\n`;
     drawCommands += `$csf = New-Object Drawing.StringFormat\n$csf.Alignment = [Drawing.StringAlignment]::Center\n`;
-    drawCommands += `$hdrFont = New-Object Drawing.Font('Arial', 48, [Drawing.FontStyle]::Bold)\n`;
-    drawCommands += `$g.DrawString('REWARD EARNED!', $hdrFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 30, $csf)\n`;
+    drawCommands += `$hdrFont = New-Object Drawing.Font('Arial', 40, [Drawing.FontStyle]::Bold)\n`;
+    drawCommands += `$g.DrawString('REWARD EARNED!', $hdrFont, [Drawing.Brushes]::Black, ${rwdCenterX}, ${MARGIN_T + 20}, $csf)\n`;
     drawCommands += `
-$rwdNameSize = 80
+$rwdNameSize = 70
 do {
   $rwdFont = New-Object Drawing.Font('Arial', $rwdNameSize, [Drawing.FontStyle]::Bold)
   $rwdWidth = $g.MeasureString('${psEsc(childName)}', $rwdFont).Width
-  if ($rwdWidth -gt ${BMP_W - 100}) { $rwdNameSize -= 10 } else { break }
-} while ($rwdNameSize -gt 40)
-$g.DrawString('${psEsc(childName)}', $rwdFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 170, $csf)
+  if ($rwdWidth -gt ${SAFE_W - 60}) { $rwdNameSize -= 10 } else { break }
+} while ($rwdNameSize -gt 36)
+$g.DrawString('${psEsc(childName)}', $rwdFont, [Drawing.Brushes]::Black, ${rwdCenterX}, ${MARGIN_T + 130}, $csf)
 `;
-    drawCommands += `$rwdNameFont = New-Object Drawing.Font('Arial', 44, [Drawing.FontStyle]::Bold)\n`;
-    drawCommands += `$g.DrawString('${psEsc(rewardName)}', $rwdNameFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 330, $csf)\n`;
-    drawCommands += `$starFont = New-Object Drawing.Font('Arial', 36)\n`;
-    drawCommands += `$g.DrawString('* * * * *', $starFont, [Drawing.Brushes]::Black, ${BMP_W/2}, 420, $csf)\n`;
-    drawCommands += `$dateFont = New-Object Drawing.Font('Arial', 24)\n`;
+    drawCommands += `$rwdNameFont = New-Object Drawing.Font('Arial', 36, [Drawing.FontStyle]::Bold)\n`;
+    drawCommands += `$g.DrawString('${psEsc(rewardName)}', $rwdNameFont, [Drawing.Brushes]::Black, ${rwdCenterX}, ${MARGIN_T + 270}, $csf)\n`;
+    drawCommands += `$starFont = New-Object Drawing.Font('Arial', 30)\n`;
+    drawCommands += `$g.DrawString('* * * * *', $starFont, [Drawing.Brushes]::Black, ${rwdCenterX}, ${MARGIN_T + 340}, $csf)\n`;
+    drawCommands += `$dateFont = New-Object Drawing.Font('Arial', 20)\n`;
     drawCommands += `$dateBrush = New-Object Drawing.SolidBrush([Drawing.Color]::Gray)\n`;
-    drawCommands += `$g.DrawString('${psEsc(new Date().toLocaleDateString())}', $dateFont, $dateBrush, ${BMP_W/2}, ${BMP_H-50}, $csf)\n`;
+    drawCommands += `$g.DrawString('${psEsc(new Date().toLocaleDateString())}', $dateFont, $dateBrush, ${rwdCenterX}, ${MARGIN_T + SAFE_H - 35}, $csf)\n`;
   }
 
   // Full PowerShell script: create bitmap, draw, print, cleanup
@@ -492,7 +506,9 @@ $printDoc.DefaultPageSettings.Margins = New-Object Drawing.Printing.Margins(0, 0
 $script:labelBmp = $bmp
 $printDoc.add_PrintPage({
   param($sender, $e)
-  $e.Graphics.DrawImage($script:labelBmp, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+  # Use MarginBounds to stay within printable area
+  $destRect = $e.MarginBounds
+  $e.Graphics.DrawImage($script:labelBmp, $destRect.X, $destRect.Y, $destRect.Width, $destRect.Height)
 })
 
 $printDoc.Print()
