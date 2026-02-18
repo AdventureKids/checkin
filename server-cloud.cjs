@@ -363,7 +363,7 @@ app.get('/api/child/pin/:pin', optionalAuth, async (req, res) => {
 
     const child = await queryOne(
       `SELECT c.*, f.name as family_name, f.id as family_id,
-              CASE WHEN c.notes LIKE '%Volunteer%' THEN true ELSE false END as is_volunteer
+              CASE WHEN c.notes LIKE '%Volunteer%' THEN 1 ELSE 0 END as is_volunteer
        FROM children c
        JOIN families f ON c.family_id = f.id
        WHERE c.pin = $1 AND c.org_id = $2`,
@@ -392,7 +392,7 @@ app.get('/api/child/pin/:pin', optionalAuth, async (req, res) => {
     if (earnedRewardIds.length > 0) {
       nextReward = await queryOne(
         `SELECT * FROM rewards
-         WHERE enabled = true
+         WHERE enabled = 1
          AND id NOT IN (${earnedRewardIds.join(',')})
          AND (
            (trigger_type = 'checkin_count' AND trigger_value > $1)
@@ -405,7 +405,7 @@ app.get('/api/child/pin/:pin', optionalAuth, async (req, res) => {
     } else {
       nextReward = await queryOne(
         `SELECT * FROM rewards
-         WHERE enabled = true
+         WHERE enabled = 1
          AND (
            (trigger_type = 'checkin_count' AND trigger_value > $1)
            OR (trigger_type = 'streak' AND trigger_value > $2)
@@ -420,7 +420,7 @@ app.get('/api/child/pin/:pin', optionalAuth, async (req, res) => {
     const equipped = await query(
       `SELECT accessory_type, accessory_id
        FROM child_accessories
-       WHERE child_id = $1 AND is_equipped = true`,
+       WHERE child_id = $1 AND is_equipped = 1`,
       [child.id]
     );
 
