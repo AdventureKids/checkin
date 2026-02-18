@@ -376,7 +376,14 @@ export async function printLabel(printerName, labelXml) {
     throw new Error('Dymo Connect service is not running. Please start Dymo Connect software.');
   }
 
-  const printParams = `printerName=${encodeURIComponent(printerName)}&labelXml=${encodeURIComponent(labelXml)}&labelSetXml=`;
+  // Dymo Connect requires printParamsXml parameter
+  const printParamsXml = '<LabelWriterPrintParams><Copies>1</Copies><PrintQuality>BarcodeAndGraphics</PrintQuality><TwinTurboRoll>Auto</TwinTurboRoll></LabelWriterPrintParams>';
+
+  const body = new URLSearchParams();
+  body.append('printerName', printerName);
+  body.append('printParamsXml', printParamsXml);
+  body.append('labelXml', labelXml);
+  body.append('labelSetXml', '');
 
   try {
     const response = await fetch(`${url}/PrintLabel`, {
@@ -384,7 +391,7 @@ export async function printLabel(printerName, labelXml) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: printParams,
+      body: body.toString(),
       mode: 'cors',
     });
 
