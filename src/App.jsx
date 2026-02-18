@@ -153,9 +153,7 @@ const KioskSetupScreen = ({ onSetupComplete }) => {
                 Check-in works without it — labels just won't print.
               </p>
               <a
-                href="https://github.com/AdventureKids/checkin/tree/main/print-station"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/download"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors"
               >
                 <span>⬇️</span> Download Print Helper

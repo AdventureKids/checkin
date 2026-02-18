@@ -14,6 +14,8 @@ const cors = require('cors');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 const path = require('path');
+const fs = require('fs');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -723,6 +725,62 @@ app.get('/api/health', async (req, res) => {
   } catch (err) {
     res.status(500).json({ status: 'unhealthy', database: 'disconnected', error: err.message });
   }
+});
+
+// ============================================
+// PRINT HELPER DOWNLOAD
+// ============================================
+
+app.get('/api/download/print-helper', (req, res) => {
+  const printStationDir = path.join(__dirname, 'print-station');
+  
+  // Check if print-station directory exists
+  if (!fs.existsSync(printStationDir)) {
+    return res.status(404).json({ error: 'Print helper package not found on server' });
+  }
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="ChurchCheck-PrintHelper.zip"');
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('Archive error:', err);
+    res.status(500).end();
+  });
+  archive.pipe(res);
+
+  // Add the core files
+  const files = [
+    'print-helper.cjs',
+    'package.json',
+    'Setup-Mac.command',
+    'Start-Mac.command',
+    'Setup-Windows.bat',
+    'Start-Windows.bat'
+  ];
+
+  files.forEach(file => {
+    const filePath = path.join(printStationDir, file);
+    if (fs.existsSync(filePath)) {
+      archive.file(filePath, { name: `ChurchCheck-PrintHelper/${file}` });
+    }
+  });
+
+  // Add only frame 000 of each avatar (all that's needed for label printing)
+  const avatarDir = path.join(printStationDir, 'public', 'avatars');
+  ['boy-ranger', 'girl-ranger'].forEach(folder => {
+    const folderPath = path.join(avatarDir, folder);
+    if (fs.existsSync(folderPath)) {
+      const files = fs.readdirSync(folderPath).filter(f => f.endsWith('-000.png'));
+      files.forEach(file => {
+        archive.file(path.join(folderPath, file), { 
+          name: `ChurchCheck-PrintHelper/public/avatars/${folder}/${file}` 
+        });
+      });
+    }
+  });
+
+  archive.finalize();
 });
 
 // ============================================
