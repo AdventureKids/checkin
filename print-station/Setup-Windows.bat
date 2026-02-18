@@ -7,6 +7,10 @@ REM The print helper will run automatically in
 REM the background from now on — even after reboot.
 REM ============================================
 
+REM IMPORTANT: cd to the folder this bat file lives in
+cd /d "%~dp0"
+set SCRIPT_DIR=%~dp0
+
 cls
 echo.
 echo   ================================================
@@ -77,7 +81,6 @@ echo Step 5: Installing as background service...
 taskkill /F /IM "node.exe" /FI "WINDOWTITLE eq ChurchCheck*" >nul 2>nul
 
 REM ---- Step 6: Create a VBS wrapper for silent background execution ----
-set SCRIPT_DIR=%~dp0
 
 echo Set WshShell = CreateObject("WScript.Shell") > "%SCRIPT_DIR%run-silent.vbs"
 echo WshShell.Run """%NODE_PATH%"" ""%SCRIPT_DIR%print-helper.cjs""", 0, False >> "%SCRIPT_DIR%run-silent.vbs"
