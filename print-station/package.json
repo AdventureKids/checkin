@@ -1,13 +1,10 @@
 {
   "name": "churchcheck-print-helper",
-  "version": "1.0.0",
-  "description": "ChurchCheck Local Print Helper - prints labels to your DYMO LabelWriter",
+  "version": "3.0.0",
+  "description": "ChurchCheck Local Print Helper - prints labels to your DYMO LabelWriter. Zero native dependencies.",
   "main": "print-helper.cjs",
   "scripts": {
     "start": "node print-helper.cjs"
   },
-  "dependencies": {
-    "canvas": "^2.11.2"
-  }
+  "dependencies": {}
 }
-

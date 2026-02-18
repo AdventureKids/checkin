@@ -36,16 +36,15 @@ for /f "tokens=*" %%i in ('node --version') do set NODE_VERSION=%%i
 for /f "tokens=*" %%i in ('where node') do set NODE_PATH=%%i
 echo   [OK] Node.js %NODE_VERSION%
 
-REM ---- Step 2: Install dependencies ----
+REM ---- Step 2: Verify setup ----
 echo.
-echo Step 2: Installing dependencies...
-call npm install --production >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo   [X] Failed to install dependencies.
+echo Step 2: Verifying files...
+if not exist "print-helper.cjs" (
+    echo   [X] print-helper.cjs not found. Make sure you unzipped the full package.
     pause
     exit /b 1
 )
-echo   [OK] Dependencies installed
+echo   [OK] All files present (zero native dependencies!)
 
 REM ---- Step 3: Copy avatars ----
 if exist "..\public\avatars" (

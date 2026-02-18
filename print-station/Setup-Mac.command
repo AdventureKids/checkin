@@ -52,27 +52,16 @@ NODE_VERSION=$(node --version)
 NODE_PATH=$(which node)
 echo "  ✅ Node.js ${NODE_VERSION} at ${NODE_PATH}"
 
-# ---- Step 2: Install dependencies ----
+# ---- Step 2: Verify files ----
 echo ""
-echo "Step 2: Installing dependencies..."
-npm install --production 2>&1 | tail -1
-
-if [ $? -ne 0 ]; then
-    echo "  ❌ Failed to install. Try running: npm install --production"
+echo "Step 2: Verifying files..."
+if [ ! -f "print-helper.cjs" ]; then
+    echo "  ❌ print-helper.cjs not found."
+    echo "     Make sure you unzipped the full package."
     read -p "  Press Enter to exit..."
     exit 1
 fi
-echo "  ✅ Dependencies installed"
-
-# ---- Step 3: Copy avatars from main project if available ----
-if [ -d "../public/avatars" ] && [ ! -d "public/avatars/boy-ranger" ]; then
-    echo ""
-    echo "Step 3: Copying avatar files..."
-    mkdir -p public/avatars
-    cp -r ../public/avatars/boy-ranger public/avatars/ 2>/dev/null
-    cp -r ../public/avatars/girl-ranger public/avatars/ 2>/dev/null
-    echo "  ✅ Avatars copied"
-fi
+echo "  ✅ All files present (zero native dependencies!)"
 
 # ---- Step 4: Detect DYMO printer ----
 echo ""
