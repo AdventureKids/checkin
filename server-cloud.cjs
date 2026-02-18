@@ -351,6 +351,119 @@ app.put('/api/children/:id', optionalAuth, async (req, res) => {
 });
 
 // ============================================
+// CHILD PIN LOOKUP
+// ============================================
+
+// Get child by PIN (for kid login) - also works for volunteers
+app.get('/api/child/pin/:pin', optionalAuth, async (req, res) => {
+  try {
+    const pin = req.params.pin;
+
+    const child = await queryOne(
+      `SELECT c.*, f.name as family_name, f.id as family_id,
+              CASE WHEN c.notes LIKE '%Volunteer%' THEN true ELSE false END as is_volunteer
+       FROM children c
+       JOIN families f ON c.family_id = f.id
+       WHERE c.pin = $1 AND c.org_id = $2`,
+      [pin, req.orgId]
+    );
+
+    if (!child) {
+      return res.status(404).json({ error: 'PIN not found' });
+    }
+
+    // If this is a volunteer, get their details
+    let volunteerDetails = null;
+    if (child.is_volunteer) {
+      volunteerDetails = await queryOne(
+        'SELECT * FROM volunteer_details WHERE volunteer_id = $1', [child.id]
+      ) || {};
+    }
+
+    // Get next upcoming reward
+    const earnedRewards = await query(
+      'SELECT reward_id FROM earned_rewards WHERE child_id = $1', [child.id]
+    );
+    const earnedRewardIds = earnedRewards.map(r => r.reward_id);
+
+    let nextReward = null;
+    if (earnedRewardIds.length > 0) {
+      nextReward = await queryOne(
+        `SELECT * FROM rewards
+         WHERE enabled = true
+         AND id NOT IN (${earnedRewardIds.join(',')})
+         AND (
+           (trigger_type = 'checkin_count' AND trigger_value > $1)
+           OR (trigger_type = 'streak' AND trigger_value > $2)
+         )
+         ORDER BY trigger_value ASC
+         LIMIT 1`,
+        [child.total_checkins, child.streak]
+      );
+    } else {
+      nextReward = await queryOne(
+        `SELECT * FROM rewards
+         WHERE enabled = true
+         AND (
+           (trigger_type = 'checkin_count' AND trigger_value > $1)
+           OR (trigger_type = 'streak' AND trigger_value > $2)
+         )
+         ORDER BY trigger_value ASC
+         LIMIT 1`,
+        [child.total_checkins, child.streak]
+      );
+    }
+
+    // Get equipped accessories
+    const equipped = await query(
+      `SELECT accessory_type, accessory_id
+       FROM child_accessories
+       WHERE child_id = $1 AND is_equipped = true`,
+      [child.id]
+    );
+
+    const equippedAccessories = {};
+    equipped.forEach(acc => {
+      equippedAccessories[acc.accessory_type] = acc.accessory_id;
+    });
+
+    res.json({
+      id: child.id,
+      firstName: child.first_name,
+      lastName: child.last_name,
+      name: child.name || child.first_name,
+      age: child.age,
+      gender: child.gender,
+      avatar: child.avatar,
+      streak: child.streak,
+      badges: child.badges,
+      totalCheckins: child.total_checkins,
+      familyId: child.family_id,
+      familyName: child.family_name,
+      equippedAccessories,
+      nextReward: nextReward ? {
+        name: nextReward.name,
+        icon: nextReward.icon,
+        prize: nextReward.prize,
+        triggerType: nextReward.trigger_type,
+        triggerValue: nextReward.trigger_value,
+        progress: nextReward.trigger_type === 'checkin_count'
+          ? child.total_checkins
+          : child.streak
+      } : null,
+      isVolunteer: !!child.is_volunteer,
+      volunteerDetails: child.is_volunteer ? {
+        serviceArea: volunteerDetails?.service_area || null,
+        servingFrequency: volunteerDetails?.serving_frequency || null
+      } : null
+    });
+  } catch (err) {
+    console.error('PIN lookup error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
 // CHECK-IN ENDPOINTS
 // ============================================
 
