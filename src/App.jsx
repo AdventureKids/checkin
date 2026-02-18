@@ -4,6 +4,177 @@ import { isDymoServiceRunning, getDymoPrinters, printCheckInLabels, isPrintHelpe
 // Use relative URL in production (same origin), localhost in development
 const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
+// Get stored auth token for API calls
+function getAuthHeaders() {
+  const token = localStorage.getItem('kioskToken');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+// ============================================
+// KIOSK SETUP / LOGIN SCREEN
+// ============================================
+const KioskSetupScreen = ({ onSetupComplete }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [printHelperStatus, setPrintHelperStatus] = useState(null);
+  const [checkingPrinter, setCheckingPrinter] = useState(true);
+
+  // Check print helper on mount
+  useEffect(() => {
+    const checkPrinter = async () => {
+      try {
+        const status = await isPrintHelperRunning();
+        setPrintHelperStatus(status);
+      } catch (e) {
+        setPrintHelperStatus({ running: false });
+      }
+      setCheckingPrinter(false);
+    };
+    checkPrinter();
+    // Re-check every 5 seconds
+    const interval = setInterval(checkPrinter, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        localStorage.setItem('kioskToken', data.token);
+        localStorage.setItem('kioskOrgName', data.orgName || '');
+        localStorage.setItem('kioskOrgId', data.orgId || '1');
+        onSetupComplete(data);
+      } else {
+        setError(data.error || 'Login failed');
+      }
+    } catch (err) {
+      setError('Could not connect to server. Check your internet connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-8">
+      <div className="w-full max-w-md">
+        {/* Logo / Title */}
+        <div className="text-center mb-8">
+          <div className="w-48 mx-auto mb-4">
+            <img src="/adventure-kids-logo.png" alt="Adventure Kids" className="w-full invert opacity-80" 
+              onError={(e) => e.target.style.display = 'none'} />
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-1">ChurchCheck</h1>
+          <p className="text-indigo-300/70">Kiosk Station Setup</p>
+        </div>
+
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="bg-slate-800/80 backdrop-blur-sm rounded-2xl p-8 border border-slate-700 shadow-xl mb-6">
+          <h2 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+            <span>🔐</span> Sign In to Your Organization
+          </h2>
+
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg px-4 py-3 mb-5 text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="mb-4">
+            <label className="block text-slate-300 mb-1.5 text-sm">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors"
+              placeholder="admin"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="mb-6">
+            <label className="block text-slate-300 mb-1.5 text-sm">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Connecting...' : 'Connect Kiosk'}
+          </button>
+        </form>
+
+        {/* Print Helper Status */}
+        <div className="bg-slate-800/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-700">
+          <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+            <span>🖨️</span> Print Station Status
+          </h3>
+          
+          {checkingPrinter ? (
+            <div className="flex items-center gap-2 text-slate-400 text-sm">
+              <div className="w-3 h-3 rounded-full bg-yellow-500 animate-pulse" />
+              Checking for print helper...
+            </div>
+          ) : printHelperStatus?.running ? (
+            <div className="flex items-center gap-2 text-emerald-400 text-sm">
+              <div className="w-3 h-3 rounded-full bg-emerald-500" />
+              Print helper connected — {printHelperStatus.printer || 'DYMO LabelWriter'}
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center gap-2 text-amber-400 text-sm mb-3">
+                <div className="w-3 h-3 rounded-full bg-amber-500" />
+                Print helper not detected
+              </div>
+              <p className="text-slate-400 text-xs mb-3">
+                To print labels, download and run the Print Helper on this computer.
+                Check-in works without it — labels just won't print.
+              </p>
+              <a
+                href="https://github.com/AdventureKids/checkin/tree/main/print-station"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors"
+              >
+                <span>⬇️</span> Download Print Helper
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Admin link */}
+        <div className="text-center mt-6">
+          <a href="/admin" className="text-slate-500 hover:text-slate-300 transition-colors text-sm">
+            Admin Dashboard →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ============================================
 // AVATAR SYSTEM - Gender-based explorer characters
 // ============================================
@@ -337,7 +508,7 @@ const KidCheckinScreen = ({ child, onCheckIn, onBack, activeTemplate }) => {
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const roomsResponse = await fetch(`${API_BASE}/api/rooms`);
+        const roomsResponse = await fetch(`${API_BASE}/api/rooms`, { headers: getAuthHeaders() });
         const allRooms = await roomsResponse.json();
         
         if (activeTemplate && activeTemplate.room_ids && activeTemplate.room_ids.length > 0) {
@@ -696,7 +867,7 @@ const VolunteerCheckinScreen = ({ volunteer, onCheckIn, onBack, activeTemplate }
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const roomsResponse = await fetch(`${API_BASE}/api/rooms`);
+        const roomsResponse = await fetch(`${API_BASE}/api/rooms`, { headers: getAuthHeaders() });
         const allRooms = await roomsResponse.json();
         
         if (activeTemplate && activeTemplate.room_ids && activeTemplate.room_ids.length > 0) {
@@ -844,7 +1015,7 @@ const ChildSelectScreen = ({ family, onCheckIn, onBack, activeTemplate }) => {
     const fetchRooms = async () => {
       try {
         // First get all rooms
-        const roomsResponse = await fetch(`${API_BASE}/api/rooms`);
+        const roomsResponse = await fetch(`${API_BASE}/api/rooms`, { headers: getAuthHeaders() });
         const allRooms = await roomsResponse.json();
         
         // If there's an active template with specific rooms, filter to those
@@ -1148,7 +1319,7 @@ const CelebrationScreen = ({ children, family, onDone, activeTemplate }) => {
         for (const child of pickupCodes) {
           const response = await fetch(`${API_BASE}/api/checkin`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({
               childId: child.id,
               familyId: family.id,
@@ -1459,7 +1630,7 @@ const VolunteerCelebrationScreen = ({ volunteer, family, onDone, activeTemplate 
         // Record the check-in
         await fetch(`${API_BASE}/api/checkin`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             childId: volunteer.id,
             familyId: family.id,
@@ -1600,6 +1771,10 @@ const VolunteerCelebrationScreen = ({ volunteer, family, onDone, activeTemplate 
 
 // Main App
 export default function App() {
+  const [isSetup, setIsSetup] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [orgName, setOrgName] = useState('');
+  const [printHelperOk, setPrintHelperOk] = useState(false);
   const [screen, setScreen] = useState('welcome');
   const [selectedChildren, setSelectedChildren] = useState([]);
   const [enteredPhone, setEnteredPhone] = useState('');
@@ -1609,20 +1784,78 @@ export default function App() {
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [allTemplates, setAllTemplates] = useState([]);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('kioskToken');
+      if (token) {
+        try {
+          const response = await fetch(`${API_BASE}/api/auth/verify`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            setIsSetup(true);
+            setOrgName(localStorage.getItem('kioskOrgName') || '');
+          } else {
+            localStorage.removeItem('kioskToken');
+            localStorage.removeItem('kioskOrgName');
+          }
+        } catch (err) {
+          // If we can't reach the server, still allow if we have a token
+          // (offline mode)
+          setIsSetup(true);
+          setOrgName(localStorage.getItem('kioskOrgName') || '');
+        }
+      }
+      setCheckingSession(false);
+    };
+    checkSession();
+
+    // Check print helper periodically
+    const checkPrinter = async () => {
+      try {
+        const status = await isPrintHelperRunning();
+        setPrintHelperOk(status.running);
+      } catch (e) {
+        setPrintHelperOk(false);
+      }
+    };
+    checkPrinter();
+    const interval = setInterval(checkPrinter, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSetupComplete = (data) => {
+    setIsSetup(true);
+    setOrgName(data.orgName || '');
+  };
+
+  const handleLogoutKiosk = () => {
+    localStorage.removeItem('kioskToken');
+    localStorage.removeItem('kioskOrgName');
+    localStorage.removeItem('kioskOrgId');
+    setIsSetup(false);
+  };
   
   // Fetch active template and all templates on mount
   useEffect(() => {
+    if (!isSetup) return;
     const fetchTemplates = async () => {
       try {
         // Fetch active template
-        const activeResponse = await fetch(`${API_BASE}/api/templates/active`);
+        const activeResponse = await fetch(`${API_BASE}/api/templates/active`, {
+          headers: getAuthHeaders()
+        });
         if (activeResponse.ok) {
           const template = await activeResponse.json();
           setActiveTemplate(template);
         }
         
         // Fetch all templates for the selector
-        const allResponse = await fetch(`${API_BASE}/api/templates`);
+        const allResponse = await fetch(`${API_BASE}/api/templates`, {
+          headers: getAuthHeaders()
+        });
         if (allResponse.ok) {
           const templates = await allResponse.json();
           setAllTemplates(templates);
@@ -1632,7 +1865,7 @@ export default function App() {
       }
     };
     fetchTemplates();
-  }, []);
+  }, [isSetup]);
   
   // Handle manual template selection
   const handleSelectTemplate = (template) => {
@@ -1662,7 +1895,9 @@ export default function App() {
     
     try {
       const cleanPhone = phone.replace(/\D/g, '');
-      const response = await fetch(`${API_BASE}/api/family/${cleanPhone}`);
+      const response = await fetch(`${API_BASE}/api/family/${cleanPhone}`, {
+        headers: getAuthHeaders()
+      });
       
       if (response.ok) {
         const familyData = await response.json();
@@ -1683,7 +1918,9 @@ export default function App() {
     setLoading(true);
     
     try {
-      const response = await fetch(`${API_BASE}/api/child/pin/${pin}`);
+      const response = await fetch(`${API_BASE}/api/child/pin/${pin}`, {
+        headers: getAuthHeaders()
+      });
       
       if (response.ok) {
         const data = await response.json();
@@ -1735,6 +1972,20 @@ export default function App() {
     setScreen('welcome');
   };
   
+  // Show loading while checking session
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-slate-400 text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show setup/login screen if not authenticated
+  if (!isSetup) {
+    return <KioskSetupScreen onSetupComplete={handleSetupComplete} />;
+  }
+
   return (
     <div className="font-sans">
       <style>{`
@@ -1831,6 +2082,29 @@ export default function App() {
         }
       `}</style>
       
+      {/* Status Bar - Top Left */}
+      <div className="fixed top-4 left-4 z-50 flex items-center gap-3">
+        {/* Print Helper Indicator */}
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-sm border ${
+          printHelperOk 
+            ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' 
+            : 'bg-amber-500/20 border-amber-500/30 text-amber-300'
+        }`}>
+          <div className={`w-2 h-2 rounded-full ${printHelperOk ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+          {printHelperOk ? '🖨️ Printer Ready' : '⚠️ No Printer'}
+        </div>
+        {/* Org Name + Logout */}
+        {orgName && (
+          <button
+            onClick={handleLogoutKiosk}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-sm bg-white/5 border border-white/10 text-white/50 hover:text-white/80 hover:bg-white/10 transition-colors"
+            title="Disconnect kiosk"
+          >
+            {orgName} ✕
+          </button>
+        )}
+      </div>
+
       {/* Template Selector - Top Right Corner */}
       {allTemplates.length > 0 && (
         <div className="fixed top-4 right-4 z-50">
