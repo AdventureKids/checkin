@@ -194,34 +194,59 @@ const getAvatarUrl = (gender) => {
 };
 
 // Animated Avatar component - plays PNG sequence based on gender
+// Preloads ALL frames before animating for smooth playback over network
+const avatarCache = {}; // Cache preloaded images across renders
+
 const AnimatedAvatar = ({ gender, className = "w-56 h-56", onAnimationComplete }) => {
   const [frame, setFrame] = useState(0);
+  const [ready, setReady] = useState(false);
   const frameRef = useRef(0);
   const animationRef = useRef(null);
   const { folder, prefix, frameCount } = getAvatarConfig(gender);
+  const cacheKey = `${folder}/${prefix}`;
   
   useEffect(() => {
-    // Preload all frames for the selected gender
-    const preloadImages = () => {
-      for (let i = 0; i < frameCount; i++) {
-        const img = new Image();
-        img.src = `/avatars/${folder}/${prefix}-${String(i).padStart(3, '0')}.png`;
-      }
-    };
-    preloadImages();
+    let cancelled = false;
+    frameRef.current = 0;
+    setFrame(0);
     
-    // Animate at ~24fps
+    // Check if already cached
+    if (avatarCache[cacheKey]) {
+      setReady(true);
+      return;
+    }
+    
+    // Preload ALL frames and wait for them to finish
+    const preloadAll = async () => {
+      const promises = [];
+      for (let i = 0; i < frameCount; i++) {
+        promises.push(new Promise((resolve) => {
+          const img = new Image();
+          img.onload = resolve;
+          img.onerror = resolve; // Don't block on failed frames
+          img.src = `/avatars/${folder}/${prefix}-${String(i).padStart(3, '0')}.png`;
+        }));
+      }
+      await Promise.all(promises);
+      avatarCache[cacheKey] = true;
+      if (!cancelled) setReady(true);
+    };
+    
+    preloadAll();
+    return () => { cancelled = true; };
+  }, [folder, prefix, frameCount, cacheKey]);
+  
+  // Start animation only after all frames are loaded
+  useEffect(() => {
+    if (!ready) return;
+    
     const fps = 24;
     const frameDelay = 1000 / fps;
     
     const animate = () => {
       frameRef.current += 1;
       if (frameRef.current >= frameCount) {
-        // Animation complete - stay on last frame or loop
-        if (onAnimationComplete) {
-          onAnimationComplete();
-        }
-        // Loop the animation
+        if (onAnimationComplete) onAnimationComplete();
         frameRef.current = 0;
       }
       setFrame(frameRef.current);
@@ -231,20 +256,25 @@ const AnimatedAvatar = ({ gender, className = "w-56 h-56", onAnimationComplete }
     animationRef.current = setTimeout(animate, frameDelay);
     
     return () => {
-      if (animationRef.current) {
-        clearTimeout(animationRef.current);
-      }
+      if (animationRef.current) clearTimeout(animationRef.current);
     };
-  }, [onAnimationComplete, folder, prefix, frameCount]);
+  }, [ready, frameCount, onAnimationComplete]);
   
   const frameNumber = String(frame).padStart(3, '0');
   
   return (
-    <img 
-      src={`/avatars/${folder}/${prefix}-${frameNumber}.png`}
-      alt="Adventure Kid"
-      className={className}
-    />
+    <div className={`${className} relative`}>
+      <img 
+        src={`/avatars/${folder}/${prefix}-${frameNumber}.png`}
+        alt="Adventure Kid"
+        className="w-full h-full object-contain"
+      />
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-8 h-8 border-3 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+    </div>
   );
 };
 
