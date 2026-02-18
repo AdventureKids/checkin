@@ -115,15 +115,16 @@ export default function Download() {
 
         {/* Setup Instructions */}
         <div className="bg-slate-800/80 backdrop-blur-sm rounded-2xl border border-slate-700 p-8 mb-6">
-          <h2 className="text-white text-xl font-bold mb-6">Setup Instructions</h2>
+          <h2 className="text-white text-xl font-bold mb-2">One-Time Setup</h2>
+          <p className="text-slate-400 text-sm mb-6">Takes about 2 minutes. After this, the print helper runs automatically — you'll never need to touch it again.</p>
           
           <div className="space-y-6">
             <div className="flex gap-4">
               <div className="flex-shrink-0 w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold">1</div>
               <div>
-                <p className="text-white font-medium">Download & Unzip</p>
+                <p className="text-white font-medium">Plug in your DYMO LabelWriter</p>
                 <p className="text-slate-400 text-sm mt-1">
-                  Click the download button above, then unzip <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">ChurchCheck-PrintHelper.zip</code> to your Desktop or Documents folder.
+                  Connect via USB, power it on, and load 30256 Shipping labels (2.31" × 4").
                 </p>
               </div>
             </div>
@@ -131,13 +132,9 @@ export default function Download() {
             <div className="flex gap-4">
               <div className="flex-shrink-0 w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold">2</div>
               <div>
-                <p className="text-white font-medium">Run Setup (one time)</p>
+                <p className="text-white font-medium">Download & Unzip</p>
                 <p className="text-slate-400 text-sm mt-1">
-                  {os === 'windows' ? (
-                    <>Double-click <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">Setup-Windows.bat</code> — it will install Node.js if needed and set up the printer.</>
-                  ) : (
-                    <>Double-click <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">Setup-Mac.command</code> — it will install Node.js if needed and detect your DYMO printer. You can also opt to auto-start on login.</>
-                  )}
+                  Click the download button above. Unzip <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">ChurchCheck-PrintHelper.zip</code> anywhere (Desktop is fine).
                 </p>
               </div>
             </div>
@@ -145,33 +142,23 @@ export default function Download() {
             <div className="flex gap-4">
               <div className="flex-shrink-0 w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold">3</div>
               <div>
-                <p className="text-white font-medium">Connect Your Printer</p>
-                <p className="text-slate-400 text-sm mt-1">
-                  Plug your DYMO LabelWriter into this computer via USB. Load 30256 Shipping labels. The setup script will auto-detect it.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold">4</div>
-              <div>
-                <p className="text-white font-medium">Start the Print Helper</p>
+                <p className="text-white font-medium">Double-click the setup file</p>
                 <p className="text-slate-400 text-sm mt-1">
                   {os === 'windows' ? (
-                    <>Double-click <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">Start-Windows.bat</code> — keep the window open while checking in.</>
+                    <>Run <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">Setup-Windows.bat</code> — it installs everything and adds the print helper to your Windows startup.</>
                   ) : (
-                    <>Double-click <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">Start-Mac.command</code> — keep the Terminal window open while checking in.</>
+                    <>Run <code className="bg-slate-700 px-2 py-0.5 rounded text-emerald-300 text-xs">Setup-Mac.command</code> — it installs everything and registers the print helper as a background service that auto-starts on login.</>
                   )}
                 </p>
               </div>
             </div>
 
             <div className="flex gap-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold">5</div>
+              <div className="flex-shrink-0 w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 font-bold">✓</div>
               <div>
-                <p className="text-white font-medium">Open Check-In</p>
+                <p className="text-white font-medium">That's it — you're done forever</p>
                 <p className="text-slate-400 text-sm mt-1">
-                  Open Chrome and visit this website. Log in with your organization credentials. You'll see <span className="text-emerald-400">🖨️ Printer Ready</span> in the top-left corner. Check in a child — a label will print!
+                  The print helper now runs silently in the background, even after restarts. Open Chrome, visit this site, log in — you'll see <span className="text-emerald-400">🖨️ Printer Ready</span> and labels will print on check-in.
                 </p>
               </div>
             </div>

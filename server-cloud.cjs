@@ -754,9 +754,9 @@ app.get('/api/download/print-helper', (req, res) => {
     'print-helper.cjs',
     'package.json',
     'Setup-Mac.command',
-    'Start-Mac.command',
     'Setup-Windows.bat',
-    'Start-Windows.bat'
+    'Uninstall-Mac.command',
+    'Uninstall-Windows.bat'
   ];
 
   files.forEach(file => {

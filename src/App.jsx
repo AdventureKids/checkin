@@ -149,14 +149,14 @@ const KioskSetupScreen = ({ onSetupComplete }) => {
                 Print helper not detected
               </div>
               <p className="text-slate-400 text-xs mb-3">
-                To print labels, download and run the Print Helper on this computer.
+                Need label printing? Install the Print Helper once — it runs silently in the background forever, even after restarts. 
                 Check-in works without it — labels just won't print.
               </p>
               <a
                 href="/download"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors"
               >
-                <span>⬇️</span> Download Print Helper
+                <span>⬇️</span> One-Time Print Helper Install
               </a>
             </div>
           )}
